@@ -1,0 +1,72 @@
+export type UserRole = "admin" | "colaborador" | "consumidor";
+
+export interface Perfil {
+  id: string;
+  email: string;
+  role: UserRole;
+  created_at?: string | null;
+}
+
+export interface Mercado {
+  id: string;
+  nome_rede: string;
+  unidade: string;
+  endereco: string;
+  latitude: number;
+  longitude: number;
+  created_at: string;
+}
+
+export interface Encarte {
+  id: string;
+  mercado_id: string;
+  arquivo_url: string;
+  data_inicio: string;
+  data_fim: string;
+  created_at: string;
+}
+
+export const OFERTA_CATEGORIAS = [
+  "Mercearia",
+  "Laticínios",
+  "Hortifrúti",
+  "Limpeza",
+  "Matinais",
+  "Bebidas",
+  "Higiene",
+  "Açougue",
+  "Padaria",
+  "Outros",
+] as const;
+
+export type OfertaCategoria = (typeof OFERTA_CATEGORIAS)[number];
+
+export interface Oferta {
+  id: string;
+  encarte_id: string | null;
+  mercado_id: string;
+  produto_nome: string;
+  marca: string | null;
+  peso_volume: string | null;
+  categoria: string;
+  preco_normal: number;
+  preco_oferta: number;
+  is_clube: boolean;
+  data_fim: string;
+  created_at: string;
+}
+
+export interface ExtractedOffer {
+  produto_nome: string;
+  marca: string;
+  peso_volume: string;
+  categoria: string;
+  preco_normal: number;
+  preco_oferta: number;
+  is_clube: boolean;
+}
+
+export interface ExtractApiResponse {
+  data_fim_sugerida: string;
+  ofertas: ExtractedOffer[];
+}

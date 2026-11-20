@@ -1,6 +1,8 @@
+import Link from "next/link";
 import {
   ArrowRight,
   Compass,
+  LogIn,
   MapPin,
   Search,
   Sparkles,
@@ -22,10 +24,18 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-olive/15 px-3 py-1 text-xs font-semibold text-brand-taupe">
+            <span className="hidden items-center gap-1.5 rounded-full bg-brand-olive/15 px-3 py-1 text-xs font-semibold text-brand-taupe sm:inline-flex">
               <Sparkles className="h-3.5 w-3.5 text-brand-gold" aria-hidden="true" />
               IA + Geolocalização
             </span>
+            <Link
+              id="header-login-link"
+              href="/login"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-taupe/40 bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-brand-yellow/15"
+            >
+              <LogIn className="h-4 w-4 text-brand-olive" aria-hidden="true" />
+              Entrar
+            </Link>
             <a
               id="header-explore-btn"
               href="#recursos"
