@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CompreMatch
 
-## Getting Started
+Plataforma inteligente de descoberta e correspondência de ofertas locais com **Next.js (App Router)**, **TypeScript**, **Tailwind CSS**, **Leaflet**, **Supabase** e **Google Gemini**.
 
-First, run the development server:
+## Pré-requisitos na sua máquina
+
+- [Node.js 20+](https://nodejs.org/) (recomendado Node.js 22/24 LTS)
+- [Git](https://git-scm.com/)
+
+## Como rodar localmente
+
+### 1. Baixar o projeto (ou atualizar caso já tenha clonado)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/mattnoite/comprematch.git
+cd comprematch
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+*(Se você já clonou antes, rode apenas `git pull origin main` dentro da pasta.)*
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. Instalar dependências e iniciar o servidor
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Ao rodar `npm run dev`, o script automático `predev` verifica se o arquivo `.env.local` existe e, caso não exista, cria automaticamente a partir de `.env.local.example`.
 
-To learn more about Next.js, take a look at the following resources:
+Depois, confira as chaves em `.env.local`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+GEMINI_API_KEY=...
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+> Caso ainda não tenha acessado o painel no navegador, abra a URL local exibida pelo Next.js no terminal (`http://localhost:3000`).
 
-## Deploy on Vercel
+## Testando Autenticação, Permissões e Ingestão de Encartes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Acesse `/login` e crie sua conta na aba **Cadastrar**.
+2. No **Supabase Dashboard → Table Editor → `perfis`** (ou via SQL Editor), promova o primeiro usuário para `admin`:
+   ```sql
+   UPDATE public.perfis
+   SET role = 'admin'
+   WHERE email = 'seu@email.com';
+   ```
+3. Faça login em `/login` com esse e-mail:
+   - `/admin/upload`: envio de encarte (JPG, PNG, PDF), extração automática com Gemini (`/api/extract`), revisão em tabela e salvamento em lote no Supabase.
+   - `/admin/usuarios`: gestão de permissões (`consumidor`, `colaborador`, `admin`) na tabela `perfis`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts disponíveis
+
+- `npm run dev` — garante `.env.local` e inicia o servidor de desenvolvimento
+- `npm run setup` — cria `.env.local` a partir de `.env.local.example` se ainda não existir
+- `npm run lint` — executa o ESLint
+- `npm run build` — gera o build de produção
