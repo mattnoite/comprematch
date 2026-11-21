@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Crosshair, Minus, Plus } from "lucide-react";
 
 export interface RouteMapOrigin {
   lat: number;
@@ -18,7 +19,7 @@ export interface RouteMapStop {
   lng: number;
   subtotal: number;
   itemCount: number;
-  letter: string;
+  stopNumber: number;
 }
 
 interface RouteMapProps {
@@ -38,27 +39,27 @@ function createOriginIcon(): L.DivIcon {
   return L.divIcon({
     className: "comprematch-map-marker",
     html: `
-      <div style="display:flex;align-items:center;gap:4px;background:#333029;color:#FFB400;border:2px solid #FFB400;border-radius:9999px;padding:4px 10px 4px 8px;font-weight:800;font-size:12px;box-shadow:0 4px 12px rgba(51,48,41,0.35);white-space:nowrap;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <div style="display:flex;align-items:center;gap:5px;background:#333029;color:#FFB400;border:2px solid #FFB400;border-radius:9999px;padding:4px 11px 4px 9px;font-weight:800;font-size:11px;box-shadow:0 4px 14px rgba(51,48,41,0.35);white-space:nowrap;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
           <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
         </svg>
-        <span>A</span>
+        <span>Origem</span>
       </div>
     `,
-    iconSize: [52, 30],
-    iconAnchor: [26, 15],
+    iconSize: [78, 30],
+    iconAnchor: [39, 15],
     popupAnchor: [0, -16],
   });
 }
 
-function createStoreIcon(letter: string): L.DivIcon {
-  const safeLetter = letter.replace(/[^A-Z0-9]/gi, "").slice(0, 2) || "B";
+function createStoreIcon(stopNumber: number): L.DivIcon {
+  const safeNum = Number.isFinite(stopNumber) ? Math.max(1, stopNumber) : 1;
   return L.divIcon({
     className: "comprematch-map-marker",
     html: `
-      <div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9999px;background:#FFB400;color:#333029;border:2.5px solid #333029;outline:2px solid #CC9B29;font-weight:900;font-size:13px;box-shadow:0 4px 12px rgba(51,48,41,0.35);">
-        ${safeLetter}
+      <div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9999px;background:#FFB400;color:#333029;border:2.5px solid #333029;outline:2px solid #CC9B29;font-weight:900;font-size:13px;box-shadow:0 4px 12px rgba(51,48,41,0.32);">
+        ${safeNum}
       </div>
     `,
     iconSize: [32, 32],
@@ -73,7 +74,7 @@ function buildOriginPopupNode(origin: RouteMapOrigin): HTMLElement {
   wrapper.style.color = "#333029";
 
   const badge = document.createElement("span");
-  badge.textContent = "Ponto A · Origem";
+  badge.textContent = "Ponto de Partida";
   badge.style.display = "inline-block";
   badge.style.fontSize = "11px";
   badge.style.fontWeight = "700";
@@ -90,13 +91,13 @@ function buildOriginPopupNode(origin: RouteMapOrigin): HTMLElement {
   return wrapper;
 }
 
-function buildStopPopupNode(stop: RouteMapStop, orderIndex: number): HTMLElement {
+function buildStopPopupNode(stop: RouteMapStop): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.style.minWidth = "190px";
   wrapper.style.color = "#333029";
 
   const badge = document.createElement("span");
-  badge.textContent = `Ponto ${stop.letter} · ${orderIndex + 1}ª parada`;
+  badge.textContent = `Parada ${stop.stopNumber}`;
   badge.style.display = "inline-block";
   badge.style.fontSize = "11px";
   badge.style.fontWeight = "700";
@@ -119,7 +120,7 @@ function buildStopPopupNode(stop: RouteMapStop, orderIndex: number): HTMLElement
   footer.style.display = "flex";
   footer.style.justifyContent = "space-between";
   footer.style.alignItems = "center";
-  footer.style.borderTop = "1px solid rgba(102,90,61,0.2)";
+  footer.style.borderTop = "1px solid rgba(102,90,61,0.18)";
   footer.style.paddingTop = "6px";
   footer.style.fontSize = "12px";
 
@@ -144,6 +145,7 @@ export default function RouteMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const lastBoundsRef = useRef<L.LatLngBounds | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -158,6 +160,7 @@ export default function RouteMap({
     const map = L.map(container, {
       center: defaultCenter,
       zoom: 13,
+      zoomControl: false,
       scrollWheelZoom: true,
     });
 
@@ -175,7 +178,7 @@ export default function RouteMap({
       mapRef.current = null;
       layerGroupRef.current = null;
     };
-    // Inicializa o mapa uma única vez; atualizações de camadas ocorrem no efeito abaixo.
+    // Inicializa o mapa uma única vez; camadas são atualizadas abaixo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -221,24 +224,63 @@ export default function RouteMap({
     stops.forEach((stop, idx) => {
       if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) return;
       const marker = L.marker([stop.lat, stop.lng], {
-        icon: createStoreIcon(stop.letter),
+        icon: createStoreIcon(stop.stopNumber),
         zIndexOffset: 500 - idx,
-      }).bindPopup(buildStopPopupNode(stop, idx));
+      }).bindPopup(buildStopPopupNode(stop));
       marker.addTo(group);
       bounds.extend([stop.lat, stop.lng]);
     });
 
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
+      lastBoundsRef.current = bounds;
+      map.fitBounds(bounds, { padding: [52, 52], maxZoom: 15 });
     }
   }, [origin, stops, routeCoordinates]);
 
+  const handleRecenter = useCallback(() => {
+    const map = mapRef.current;
+    const bounds = lastBoundsRef.current;
+    if (map && bounds?.isValid()) {
+      map.fitBounds(bounds, { padding: [52, 52], maxZoom: 15 });
+    }
+  }, []);
+
   return (
-    <div
-      ref={containerRef}
-      role="region"
-      aria-label="Mapa interativo da rota de compras"
-      className="h-[400px] w-full rounded-2xl border border-brand-taupe bg-[#faf7ef] sm:h-[480px] lg:h-[560px]"
-    />
+    <div className="relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-sm">
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label="Mapa interativo do GPS de Economia"
+        className="h-[400px] w-full bg-[#FAFAF9] sm:h-[480px] lg:h-[560px]"
+      />
+
+      {/* Controles customizados do mapa */}
+      <div className="absolute right-3 bottom-7 z-[1000] flex flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={() => mapRef.current?.zoomIn()}
+          aria-label="Aumentar zoom do mapa"
+          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-stone-200/90 bg-white/95 text-brand-dark shadow-sm backdrop-blur-xs transition-all hover:border-brand-olive hover:bg-brand-yellow/20 active:scale-95"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => mapRef.current?.zoomOut()}
+          aria-label="Diminuir zoom do mapa"
+          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-stone-200/90 bg-white/95 text-brand-dark shadow-sm backdrop-blur-xs transition-all hover:border-brand-olive hover:bg-brand-yellow/20 active:scale-95"
+        >
+          <Minus className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={handleRecenter}
+          aria-label="Centralizar trajeto no mapa"
+          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-stone-200/90 bg-white/95 text-brand-dark shadow-sm backdrop-blur-xs transition-all hover:border-brand-olive hover:bg-brand-yellow/20 active:scale-95"
+        >
+          <Crosshair className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
   );
 }

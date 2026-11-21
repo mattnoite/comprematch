@@ -30,7 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   if (loading || !user || !isAuthorizedStaff) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#fcfaf5] text-brand-dark">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#FAFAF9] text-brand-dark">
         <Loader2
           className="h-7 w-7 animate-spin text-brand-gold"
           aria-hidden="true"
@@ -48,48 +48,50 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#fcfaf5] text-brand-dark">
-      <header className="border-b border-brand-taupe bg-brand-dark text-white">
+    <div className="flex min-h-screen flex-col bg-[#FAFAF9] text-brand-dark">
+      <header className="border-b border-brand-taupe/25 bg-brand-dark text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3.5">
           <div className="flex items-center gap-6">
             <Link href="/" className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-yellow text-brand-dark">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-yellow text-brand-dark shadow-xs">
                 <Store className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
                 <span className="text-base font-bold tracking-tight text-white">
                   CompreMatch
                 </span>
-                <span className="ml-2 rounded-md bg-brand-olive px-2 py-0.5 text-[11px] font-semibold text-white">
-                  Painel Interno
+                <span className="ml-2 rounded-md bg-brand-olive/40 px-2 py-0.5 text-[11px] font-semibold text-brand-yellow">
+                  Portal do Lojista
                 </span>
               </div>
             </Link>
 
-            <nav aria-label="Navegação administrativa" className="flex gap-1.5">
+            <nav aria-label="Navegação do Portal do Lojista" className="flex gap-1.5">
               <Link
                 href="/admin/upload"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                aria-current={pathname?.startsWith("/admin/upload") ? "page" : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
                   pathname?.startsWith("/admin/upload")
                     ? "bg-brand-yellow text-brand-dark"
                     : "text-white/80 hover:bg-brand-taupe/40 hover:text-white"
                 }`}
               >
                 <FileUp className="h-3.5 w-3.5" aria-hidden="true" />
-                Ingestão de Encartes
+                Ingestão de Catálogos
               </Link>
 
               {isAdmin && (
                 <Link
                   href="/admin/usuarios"
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  aria-current={pathname?.startsWith("/admin/usuarios") ? "page" : undefined}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
                     pathname?.startsWith("/admin/usuarios")
                       ? "bg-brand-yellow text-brand-dark"
                       : "text-white/80 hover:bg-brand-taupe/40 hover:text-white"
                   }`}
                 >
                   <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                  Gestão de Usuários
+                  Equipe e Acessos
                 </Link>
               )}
             </nav>

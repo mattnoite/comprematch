@@ -226,18 +226,17 @@ export default function AdminUsuariosPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-md bg-brand-olive/15 px-2.5 py-1 text-xs font-semibold text-brand-olive">
+            <span className="inline-flex items-center gap-1 rounded-full border border-brand-olive/30 bg-brand-olive/10 px-3 py-1 text-xs font-semibold text-brand-olive">
               <Shield className="h-3.5 w-3.5" aria-hidden="true" />
-              Controle de Acesso (RBAC)
+              Portal do Lojista
             </span>
           </div>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-dark">
-            Gestão de Usuários e Permissões
+            Equipe e Permissões de Acesso
           </h1>
           <p className="mt-1 text-sm text-brand-taupe">
-            Gerencie quem pode acessar o painel de ingestão de encartes ou
-            administrar contas na tabela{" "}
-            <code className="font-mono text-xs text-brand-olive">perfis</code>.
+            Gerencie quem pode publicar catálogos promocionais ou administrar
+            contas da sua operação.
           </p>
         </div>
 
@@ -246,7 +245,7 @@ export default function AdminUsuariosPage() {
           type="button"
           onClick={() => void handleRefresh()}
           disabled={loadingList}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-sm font-bold text-brand-dark transition-colors hover:bg-brand-gold disabled:opacity-60"
+          className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:opacity-60"
         >
           <RefreshCw
             className={`h-4 w-4 ${loadingList ? "animate-spin" : ""}`}

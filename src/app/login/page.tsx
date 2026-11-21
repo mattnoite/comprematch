@@ -115,19 +115,19 @@ function LoginFormContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#fcfaf5] text-brand-dark">
-      <header className="border-b border-brand-taupe/30 bg-brand-dark text-white">
+    <div className="flex min-h-screen flex-col bg-[#FAFAF9] text-brand-dark">
+      <header className="border-b border-brand-taupe/25 bg-brand-dark text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-yellow text-brand-dark">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-yellow text-brand-dark">
               <Store className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
               <span className="text-lg font-bold tracking-tight text-white">
                 CompreMatch
               </span>
-              <span className="ml-2 rounded-md bg-brand-olive/30 px-2 py-0.5 text-[11px] font-semibold text-brand-yellow">
-                Acesso
+              <span className="ml-2 rounded-md bg-brand-olive/40 px-2 py-0.5 text-[11px] font-semibold text-brand-yellow">
+                Portal do Lojista
               </span>
             </div>
           </Link>

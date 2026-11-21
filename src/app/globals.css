@@ -3,7 +3,7 @@
 @config "../../tailwind.config.ts";
 
 :root {
-  --background: #fcfaf5;
+  --background: #fafaf9;
   --foreground: #333029;
 }
 
@@ -18,6 +18,14 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+/* Utilitário para carrossel horizontal limpo */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Native <dialog> modal scroll containment & slide-over drawer transitions */
@@ -46,8 +54,8 @@ dialog.cart-drawer:modal {
 dialog.cart-drawer::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
-  background: rgb(51 48 41 / 0.52);
-  backdrop-filter: blur(2px);
+  background: rgb(51 48 41 / 0.48);
+  backdrop-filter: blur(3px);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -64,3 +72,70 @@ dialog.cart-drawer::backdrop {
   }
 }
 
+/* Barra de progresso nativa estilizada (determinada e indeterminada) */
+progress.brand-progress {
+  appearance: none;
+  border: 0 solid;
+  overflow: clip;
+  container-type: inline-size;
+  --progress-bar-radius: 1e5px;
+  --progress-bar-track: #e7e5e4;
+  --progress-bar-fill: #ffb400;
+  --progress-bar-indeterminate-size: 36%;
+  --progress-bar-indeterminate-animation-duration: 1.35s;
+  height: 8px;
+  border-radius: var(--progress-bar-radius);
+  background: var(--progress-bar-track);
+  box-shadow: inset 0 1px 2px rgb(51 48 41 / 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress.brand-progress {
+    --progress-bar-indeterminate-animation-duration: 10s;
+  }
+}
+
+progress.brand-progress:indeterminate {
+  --progress-bar-animation: var(
+    --progress-bar-indeterminate-animation,
+    brand-progress-indeterminate
+      var(--progress-bar-indeterminate-animation-duration) infinite linear
+  );
+}
+
+progress.brand-progress:dir(rtl) {
+  --progress-bar-indeterminate-animation: brand-progress-indeterminate
+    var(--progress-bar-indeterminate-animation-duration) infinite linear reverse;
+}
+
+progress.brand-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+progress.brand-progress::-webkit-progress-value {
+  background: var(--progress-bar-fill);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.3s ease;
+  animation: var(--progress-bar-animation, revert-rule);
+}
+
+progress.brand-progress::-moz-progress-bar {
+  background: var(--progress-bar-fill);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.3s ease;
+  animation: var(--progress-bar-animation, revert-rule);
+}
+
+@keyframes brand-progress-indeterminate {
+  from,
+  to {
+    inline-size: var(--progress-bar-indeterminate-size);
+    margin-right: auto;
+  }
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 100cqi;
+  }
+}

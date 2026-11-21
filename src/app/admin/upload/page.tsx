@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Calendar,
   Check,
+  Copy,
   Database,
   FileText,
   Image as ImageIcon,
@@ -69,6 +70,13 @@ const ACCEPTED_TYPES = new Set([
   "application/pdf",
 ]);
 
+const EXTRACTION_STAGES = [
+  "Lendo layout e validade do encarte...",
+  "Identificando rede e unidade do supermercado...",
+  "Extraindo produtos, marcas e preços promocionais...",
+  "Estruturando itens para conferência...",
+] as const;
+
 export default function AdminUploadPage() {
   const { session } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -90,9 +98,18 @@ export default function AdminUploadPage() {
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const [extracting, setExtracting] = useState<boolean>(false);
+  const [extractionStageIdx, setExtractionStageIdx] = useState<number>(0);
   const [saving, setSaving] = useState<boolean>(false);
   const [ofertas, setOfertas] = useState<EditableOffer[]>([]);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  useEffect(() => {
+    if (!extracting) return;
+    const interval = window.setInterval(() => {
+      setExtractionStageIdx((prev) => (prev + 1) % EXTRACTION_STAGES.length);
+    }, 2200);
+    return () => window.clearInterval(interval);
+  }, [extracting]);
 
   const showToast = useCallback(
     (type: ToastMessage["type"], title: string, description?: string) => {
@@ -208,6 +225,7 @@ export default function AdminUploadPage() {
       return;
     }
 
+    setExtractionStageIdx(0);
     setExtracting(true);
     try {
       const formData = new FormData();
@@ -314,6 +332,18 @@ export default function AdminUploadPage() {
 
   function removeOfferRow(localId: string) {
     setOfertas((prev) => prev.filter((row) => row.localId !== localId));
+  }
+
+  function duplicateOfferRow(localId: string) {
+    setOfertas((prev) => {
+      const idx = prev.findIndex((row) => row.localId === localId);
+      if (idx === -1) return prev;
+      const clone: EditableOffer = {
+        ...prev[idx],
+        localId: crypto.randomUUID(),
+      };
+      return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
+    });
   }
 
   function addManualRow() {
@@ -501,31 +531,31 @@ export default function AdminUploadPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-brand-olive/15 px-2.5 py-1 text-xs font-semibold text-brand-olive">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-olive/30 bg-brand-olive/10 px-3 py-1 text-xs font-semibold text-brand-olive">
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-            Fase 3 · Ingestão Multimodal com Gemini
+            Leitura Inteligente de Encartes
           </span>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-dark">
-            Upload e Conferência de Encartes
+          <h1 className="mt-2.5 text-2xl font-black tracking-tight text-brand-dark sm:text-3xl">
+            Portal do Lojista / Ingestão de Catálogos
           </h1>
           <p className="mt-1 text-sm text-brand-taupe">
-            Envie a imagem ou PDF do encarte, extraia as ofertas automaticamente
-            com IA e valide os preços antes de publicar.
+            Faça upload de encartes em imagem ou PDF para extrair ofertas
+            automaticamente e publicar na vitrine em segundos.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             id="extract-ai-btn"
             type="button"
             onClick={() => void handleExtractWithAI()}
             disabled={extracting || !selectedFile}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-55"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
           >
             {extracting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Extraindo com IA...
+                Analisando catálogo...
               </>
             ) : (
               <>
@@ -540,12 +570,12 @@ export default function AdminUploadPage() {
             type="button"
             onClick={() => void handleSaveToDatabase()}
             disabled={saving || ofertas.length === 0 || !mercadoId}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-55"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-dark px-5 py-2.5 text-sm font-semibold text-brand-yellow shadow-xs transition-all hover:bg-brand-taupe active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Salvando...
+                Publicando...
               </>
             ) : (
               <>
@@ -557,8 +587,8 @@ export default function AdminUploadPage() {
         </div>
       </div>
 
-      {/* Configuração do Encarte */}
-      <section className="grid gap-4 rounded-2xl border border-brand-taupe bg-white p-5 sm:grid-cols-2">
+      {/* Configuração do Catálogo */}
+      <section className="grid gap-5 rounded-2xl border border-stone-200/70 bg-white p-5 shadow-2xs sm:grid-cols-2">
         <div>
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <label
@@ -566,18 +596,18 @@ export default function AdminUploadPage() {
               className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
             >
               <Store className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
-              Mercado Emissor
+              Supermercado Emissor
             </label>
 
             {mercadoDetectionStatus === "matched" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-brand-gold/60 bg-brand-yellow/25 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-gold bg-brand-yellow/15 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
                 <Sparkles className="h-3 w-3 text-brand-olive" aria-hidden="true" />
                 Identificado automaticamente via IA
               </span>
             )}
 
             {mercadoDetectionStatus === "unmatched" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
                 <AlertTriangle className="h-3 w-3 text-amber-600" aria-hidden="true" />
                 Selecione o mercado manualmente
               </span>
@@ -592,10 +622,10 @@ export default function AdminUploadPage() {
               setMercadoDetectionStatus("idle");
             }}
             disabled={loadingMercados}
-            className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none disabled:opacity-60 ${
+            className={`w-full rounded-xl border bg-[#FAFAF9] px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-olive focus:bg-white focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none disabled:opacity-60 ${
               mercadoDetectionStatus === "unmatched"
-                ? "border-brand-gold ring-2 ring-brand-yellow/35"
-                : "border-brand-taupe"
+                ? "border-brand-gold ring-2 ring-brand-yellow/30"
+                : "border-stone-200/90"
             }`}
           >
             {loadingMercados ? (
@@ -609,7 +639,7 @@ export default function AdminUploadPage() {
                 </option>
                 {mercados.map((mercado) => (
                   <option key={mercado.id} value={mercado.id}>
-                    {mercado.nome_rede} — {mercado.unidade}
+                    {mercado.nome_rede} • {mercado.unidade}
                   </option>
                 ))}
               </>
@@ -631,8 +661,8 @@ export default function AdminUploadPage() {
             </p>
           ) : (
             <p className="mt-1.5 text-xs text-brand-taupe">
-              Opcional antes de extrair: a IA tenta identificar o mercado
-              automaticamente.
+              Opcional antes de extrair: a IA identifica automaticamente a rede
+              e a filial a partir do catálogo.
             </p>
           )}
         </div>
@@ -646,47 +676,48 @@ export default function AdminUploadPage() {
               className="h-3.5 w-3.5 text-brand-olive"
               aria-hidden="true"
             />
-            Início da Vigência (data_inicio)
+            Início da Vigência
           </label>
           <input
             id="data-inicio-input"
             type="date"
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}
-            className="w-full rounded-xl border border-brand-taupe bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
+            className="w-full rounded-xl border border-stone-200/90 bg-[#FAFAF9] px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-olive focus:bg-white focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
           />
           <p className="mt-1.5 text-xs text-brand-taupe">
-            Preenchida automaticamente quando identificada no encarte.
+            Capturada automaticamente quando presente no cabeçalho ou rodapé do
+            encarte.
           </p>
         </div>
       </section>
 
       {/* Área Principal: Preview à esquerda + Tabela de Conferência à direita/abaixo */}
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Coluna de Upload & Preview */}
+        {/* Coluna de Upload & Preview (Estilo Stripe / Vercel) */}
         <section className="space-y-4 lg:col-span-4">
-          <div className="overflow-hidden rounded-2xl border border-brand-taupe bg-white">
-            <div className="flex items-center justify-between bg-brand-dark px-4 py-3 text-white">
-              <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-2xs">
+            <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
+              <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-dark">
                 <ImageIcon
-                  className="h-4 w-4 text-brand-yellow"
+                  className="h-4 w-4 text-brand-olive"
                   aria-hidden="true"
                 />
-                Arquivo do Encarte
+                Upload de Catálogo
               </span>
               {selectedFile && (
                 <button
                   type="button"
                   onClick={clearSelectedFile}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-0.5 text-xs text-white/80 hover:bg-white/10 hover:text-white"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-taupe transition-colors hover:bg-stone-100 hover:text-brand-dark"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  Limpar
+                  Remover
                 </button>
               )}
             </div>
 
-            <div className="p-4">
+            <div className="p-5">
               <div
                 role="button"
                 tabIndex={0}
@@ -703,21 +734,20 @@ export default function AdminUploadPage() {
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+                className={`group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-all ${
                   isDragging
-                    ? "border-brand-yellow bg-brand-yellow/15"
-                    : "border-brand-taupe/60 bg-[#fcfaf5] hover:border-brand-olive hover:bg-brand-yellow/10"
+                    ? "border-brand-yellow bg-brand-yellow/10"
+                    : "border-stone-300/90 bg-[#FAFAF9] hover:border-brand-olive hover:bg-brand-yellow/5"
                 }`}
               >
-                <UploadCloud
-                  className="h-8 w-8 text-brand-olive"
-                  aria-hidden="true"
-                />
-                <p className="mt-2 text-sm font-semibold text-brand-dark">
-                  Arraste o encarte aqui ou clique para selecionar
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200/80 bg-white text-brand-olive shadow-2xs transition-transform group-hover:scale-105">
+                  <UploadCloud className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <p className="mt-3.5 text-sm font-bold text-brand-dark">
+                  Arraste o encarte ou clique para enviar
                 </p>
                 <p className="mt-1 text-xs text-brand-taupe">
-                  Formatos aceitos: JPG, PNG, WEBP ou PDF (até 20 MB)
+                  JPG, PNG, WEBP ou PDF • até 20 MB
                 </p>
 
                 <input
@@ -732,18 +762,48 @@ export default function AdminUploadPage() {
                 />
               </div>
 
+              {/* Barra de Progresso Animada durante a Leitura da IA */}
+              {extracting && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-4 space-y-2.5 rounded-2xl border border-brand-gold/40 bg-brand-yellow/10 p-4"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="flex items-center gap-1.5 font-bold text-brand-dark">
+                      <Sparkles
+                        className="h-3.5 w-3.5 text-brand-olive"
+                        aria-hidden="true"
+                      />
+                      Processamento IA em andamento
+                    </span>
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin text-brand-gold"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <progress
+                    className="brand-progress block w-full"
+                    aria-label="Extraindo ofertas do encarte com inteligência artificial"
+                  />
+                  <p className="text-[11px] font-medium text-brand-taupe">
+                    {EXTRACTION_STAGES[extractionStageIdx]}
+                  </p>
+                </div>
+              )}
+
               {selectedFile && previewUrl && (
-                <div className="mt-4 space-y-2.5">
-                  <div className="flex items-center justify-between rounded-lg border border-brand-taupe/40 bg-[#faf7ef] px-3 py-2 text-xs">
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between rounded-xl border border-stone-200/80 bg-[#FAFAF9] px-3.5 py-2.5 text-xs">
                     <span className="truncate font-semibold text-brand-dark">
                       {selectedFile.name}
                     </span>
-                    <span className="ml-2 shrink-0 rounded bg-brand-olive/20 px-2 py-0.5 font-medium text-brand-dark">
+                    <span className="ml-2 shrink-0 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-taupe ring-1 ring-stone-200/80">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                     </span>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-brand-taupe bg-[#faf7ef]">
+                  <div className="overflow-hidden rounded-2xl border border-stone-200/80 bg-[#FAFAF9]">
                     {isPdf ? (
                       <div className="space-y-2 p-3">
                         <div className="flex items-center gap-2 text-xs font-semibold text-brand-dark">
@@ -751,19 +811,19 @@ export default function AdminUploadPage() {
                             className="h-4 w-4 text-brand-olive"
                             aria-hidden="true"
                           />
-                          Pré-visualização PDF
+                          Pré-visualização do catálogo (PDF)
                         </div>
                         <iframe
                           src={previewUrl}
-                          title="Pré-visualização do encarte em PDF"
-                          className="h-80 w-full rounded-lg border border-brand-taupe/30 bg-white"
+                          title="Pré-visualização do catálogo em PDF"
+                          className="h-80 w-full rounded-xl border border-stone-200/70 bg-white"
                         />
                       </div>
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={previewUrl}
-                        alt="Pré-visualização do encarte enviado"
+                        alt="Pré-visualização do catálogo enviado"
                         className="max-h-[420px] w-full object-contain"
                       />
                     )}
@@ -774,15 +834,15 @@ export default function AdminUploadPage() {
           </div>
         </section>
 
-        {/* Coluna da Tabela de Conferência */}
+        {/* Coluna da Tabela de Conferência Limpa */}
         <section className="lg:col-span-8">
-          <div className="overflow-hidden rounded-2xl border border-brand-taupe bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-brand-dark px-5 py-3.5 text-white">
+          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
               <div className="flex items-center gap-2.5">
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Tabela de Conferência
+                <h2 className="text-sm font-extrabold tracking-tight text-brand-dark">
+                  Conferência de Ofertas
                 </h2>
-                <span className="rounded-full bg-brand-yellow px-2.5 py-0.5 text-xs font-bold text-brand-dark">
+                <span className="rounded-full bg-brand-yellow/25 px-2.5 py-0.5 text-xs font-bold text-brand-dark">
                   {ofertas.length}{" "}
                   {ofertas.length === 1 ? "item" : "itens"}
                 </span>
@@ -792,20 +852,20 @@ export default function AdminUploadPage() {
                 id="add-manual-row-btn"
                 type="button"
                 onClick={addManualRow}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-gold bg-brand-olive/30 px-3 py-1.5 text-xs font-semibold text-brand-yellow transition-colors hover:bg-brand-olive/50"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-brand-olive/45 bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark transition-all hover:border-brand-gold hover:bg-brand-yellow/15 active:scale-95"
               >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />+ Adicionar
-                Linha Manual
+                <Plus className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
+                + Adicionar Linha Manual
               </button>
             </div>
 
             {/* Bloco de Controle de Vigência */}
-            <div className="border-b border-brand-taupe bg-brand-yellow/10 px-5 py-4">
+            <div className="border-b border-stone-200/70 bg-[#FAFAF9] px-5 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="flex-1 max-w-xs">
+                <div className="max-w-xs flex-1">
                   <label
                     htmlFor="data-fim-geral-input"
-                    className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-brand-dark"
+                    className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
                   >
                     <Calendar
                       className="h-3.5 w-3.5 text-brand-olive"
@@ -818,7 +878,7 @@ export default function AdminUploadPage() {
                     type="date"
                     value={dataFim}
                     onChange={(e) => handleGlobalDataFimChange(e.target.value)}
-                    className="w-full rounded-xl border border-brand-taupe bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
+                    className="w-full rounded-xl border border-stone-200/90 bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                   />
                 </div>
 
@@ -827,36 +887,36 @@ export default function AdminUploadPage() {
                   type="button"
                   onClick={applyGlobalValidityToAllItems}
                   disabled={ofertas.length === 0 || !dataFim}
-                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-xs font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-55"
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-xs font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
                   Aplicar esta validade a todos os itens
                 </button>
               </div>
               <p className="mt-2 text-xs text-brand-taupe">
-                Sugerida pela IA ao ler cabeçalho, rodapé e letras miúdas do
-                encarte. Edite aqui ou ajuste individualmente na coluna{" "}
+                Preenchida automaticamente pela leitura do catálogo. Edite aqui
+                ou ajuste prazos específicos na coluna{" "}
                 <strong className="text-brand-dark">Validade</strong>.
               </p>
             </div>
 
             {ofertas.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-yellow/20 text-brand-dark">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-yellow/20 text-brand-dark">
                   <Sparkles className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <h3 className="mt-4 text-base font-bold text-brand-dark">
-                  Nenhuma oferta na conferência ainda
+                  Nenhuma oferta em conferência
                 </h3>
                 <p className="mt-1 max-w-md text-xs leading-relaxed text-brand-taupe">
-                  Selecione um mercado, envie um encarte e clique em{" "}
+                  Envie um catálogo ao lado e clique em{" "}
                   <strong>&ldquo;Extrair Ofertas com IA&rdquo;</strong> ou
-                  adicione ofertas manualmente.
+                  adicione itens manualmente.
                 </p>
                 <button
                   type="button"
                   onClick={addManualRow}
-                  className="mt-5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-brand-taupe bg-white px-4 py-2 text-xs font-bold text-brand-dark transition-colors hover:bg-brand-yellow/15"
+                  className="mt-5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-200/90 bg-white px-4 py-2 text-xs font-semibold text-brand-dark transition-all hover:border-brand-olive hover:bg-brand-yellow/10 active:scale-95"
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />+
                   Adicionar Linha Manual
@@ -864,21 +924,21 @@ export default function AdminUploadPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[920px] border-collapse text-left text-xs">
+                <table className="w-full min-w-[960px] border-collapse text-left text-xs">
                   <thead>
-                    <tr className="border-b border-brand-taupe bg-[#faf7ef] font-bold uppercase tracking-wider text-brand-dark">
-                      <th className="px-3 py-3">Produto</th>
-                      <th className="px-3 py-3">Marca</th>
-                      <th className="px-3 py-3">Peso/Vol.</th>
-                      <th className="px-3 py-3">Categoria</th>
-                      <th className="px-3 py-3">Normal (R$)</th>
-                      <th className="px-3 py-3">Oferta (R$)</th>
-                      <th className="px-3 py-3 text-center">Clube</th>
-                      <th className="px-3 py-3">Validade</th>
-                      <th className="px-3 py-3 text-center">Ação</th>
+                    <tr className="border-b border-stone-200/80 bg-[#FAFAF9] text-[11px] font-bold uppercase tracking-wider text-brand-taupe">
+                      <th scope="col" className="px-3 py-3">Produto</th>
+                      <th scope="col" className="px-3 py-3">Marca</th>
+                      <th scope="col" className="px-3 py-3">Peso/Vol.</th>
+                      <th scope="col" className="px-3 py-3">Categoria</th>
+                      <th scope="col" className="px-3 py-3">Normal (R$)</th>
+                      <th scope="col" className="px-3 py-3">Oferta (R$)</th>
+                      <th scope="col" className="px-3 py-3 text-center">Fidelidade</th>
+                      <th scope="col" className="px-3 py-3">Validade</th>
+                      <th scope="col" className="px-3 py-3 text-center">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-brand-taupe/35">
+                  <tbody className="divide-y divide-stone-100">
                     {ofertas.map((row) => {
                       const hasPriceAlert =
                         row.preco_oferta <= 0 ||
@@ -888,7 +948,7 @@ export default function AdminUploadPage() {
                       return (
                         <tr
                           key={row.localId}
-                          className="transition-colors hover:bg-[#fcfaf5]"
+                          className="transition-colors hover:bg-[#FAFAF9]/80"
                         >
                           <td className="px-2.5 py-2.5">
                             <input
@@ -902,7 +962,7 @@ export default function AdminUploadPage() {
                                 )
                               }
                               placeholder="Ex: Arroz Branco Tipo 1"
-                              className="w-full min-w-[170px] rounded-lg border border-brand-taupe/70 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-gold focus:ring-1 focus:ring-brand-yellow focus:outline-none"
+                              className="w-full min-w-[170px] rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             />
                           </td>
 
@@ -918,7 +978,7 @@ export default function AdminUploadPage() {
                                 )
                               }
                               placeholder="Marca"
-                              className="w-28 rounded-lg border border-brand-taupe/70 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-1 focus:ring-brand-yellow focus:outline-none"
+                              className="w-28 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             />
                           </td>
 
@@ -934,7 +994,7 @@ export default function AdminUploadPage() {
                                 )
                               }
                               placeholder="5kg"
-                              className="w-20 rounded-lg border border-brand-taupe/70 bg-white px-2 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-1 focus:ring-brand-yellow focus:outline-none"
+                              className="w-20 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             />
                           </td>
 
@@ -948,7 +1008,7 @@ export default function AdminUploadPage() {
                                   e.target.value
                                 )
                               }
-                              className="w-32 rounded-lg border border-brand-taupe/70 bg-white px-2 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-1 focus:ring-brand-yellow focus:outline-none"
+                              className="w-32 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             >
                               {OFERTA_CATEGORIAS.map((cat) => (
                                 <option key={cat} value={cat}>
@@ -971,7 +1031,7 @@ export default function AdminUploadPage() {
                                   Number.parseFloat(e.target.value) || 0
                                 )
                               }
-                              className="w-22 rounded-lg border border-brand-taupe/70 bg-white px-2 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-1 focus:ring-brand-yellow focus:outline-none"
+                              className="w-22 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-taupe focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             />
                           </td>
 
@@ -989,10 +1049,10 @@ export default function AdminUploadPage() {
                                     Number.parseFloat(e.target.value) || 0
                                   )
                                 }
-                                className={`w-22 rounded-lg border bg-white px-2 py-1.5 text-xs font-bold text-brand-dark focus:ring-1 focus:outline-none ${
+                                className={`w-22 rounded-xl border bg-white px-2.5 py-1.5 text-xs font-bold text-brand-dark focus:ring-2 focus:outline-none ${
                                   hasPriceAlert
-                                    ? "border-red-500 focus:border-red-600 focus:ring-red-300"
-                                    : "border-brand-taupe/70 focus:border-brand-gold focus:ring-brand-yellow"
+                                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                                    : "border-stone-200/90 focus:border-brand-olive focus:ring-brand-yellow/35"
                                 }`}
                               />
                               {hasPriceAlert && (
@@ -1018,16 +1078,16 @@ export default function AdminUploadPage() {
                                   !row.is_clube
                                 )
                               }
-                              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                              className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all active:scale-95 ${
                                 row.is_clube
-                                  ? "bg-brand-olive text-white"
-                                  : "border border-brand-taupe/50 bg-[#faf7ef] text-brand-taupe"
+                                  ? "border-brand-gold bg-brand-yellow/20 text-brand-dark"
+                                  : "border-stone-200/90 bg-[#FAFAF9] text-brand-taupe hover:border-brand-olive"
                               }`}
                             >
                               {row.is_clube && (
-                                <Check className="h-3 w-3" aria-hidden="true" />
+                                <Check className="h-3 w-3 text-brand-olive" aria-hidden="true" />
                               )}
-                              {row.is_clube ? "Clube" : "Comum"}
+                              {row.is_clube ? "Preço Clube" : "Regular"}
                             </button>
                           </td>
 
@@ -1043,24 +1103,35 @@ export default function AdminUploadPage() {
                                 )
                               }
                               aria-label={`Validade de ${row.produto_nome || "oferta"}`}
-                              className={`w-36 rounded-lg border bg-white px-2 py-1.5 text-xs font-medium text-brand-dark focus:ring-1 focus:outline-none ${
+                              className={`w-36 rounded-xl border bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:ring-2 focus:outline-none ${
                                 !row.data_fim
-                                  ? "border-red-500 focus:border-red-600 focus:ring-red-300"
-                                  : "border-brand-taupe focus:border-brand-gold focus:ring-brand-yellow"
+                                  ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                                  : "border-stone-200/90 focus:border-brand-olive focus:ring-brand-yellow/35"
                               }`}
                             />
                           </td>
 
-                          <td className="px-2.5 py-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeOfferRow(row.localId)}
-                              title="Remover linha"
-                              aria-label={`Remover ${row.produto_nome || "linha"}`}
-                              className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-brand-taupe/40 p-1.5 text-brand-taupe transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-700"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
+                          <td className="px-2.5 py-2.5">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => duplicateOfferRow(row.localId)}
+                                title="Duplicar linha"
+                                aria-label={`Duplicar ${row.produto_nome || "linha"}`}
+                                className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-stone-200/80 p-1.5 text-brand-taupe transition-colors hover:border-brand-olive hover:bg-brand-yellow/15 hover:text-brand-dark"
+                              >
+                                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeOfferRow(row.localId)}
+                                title="Remover linha"
+                                aria-label={`Remover ${row.produto_nome || "linha"}`}
+                                className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-stone-200/80 p-1.5 text-brand-taupe transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

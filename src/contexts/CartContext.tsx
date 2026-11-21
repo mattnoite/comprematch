@@ -45,6 +45,7 @@ interface CartContextValue {
   clearCart: () => void;
   getItemCount: () => number;
   getCartTotal: () => number;
+  getTotalSavings: () => number;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -232,6 +233,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [items]
   );
 
+  const getTotalSavings = useCallback(
+    () =>
+      items.reduce((sum, item) => {
+        const normal = item.preco_normal ?? item.preco_oferta;
+        return sum + Math.max(0, normal - item.preco_oferta) * item.quantity;
+      }, 0),
+    [items]
+  );
+
   const value = useMemo<CartContextValue>(
     () => ({
       items,
@@ -242,6 +252,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       clearCart,
       getItemCount,
       getCartTotal,
+      getTotalSavings,
     }),
     [
       items,
@@ -252,6 +263,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       clearCart,
       getItemCount,
       getCartTotal,
+      getTotalSavings,
     ]
   );
 

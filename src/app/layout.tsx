@@ -4,9 +4,9 @@ import { CartProvider } from "@/contexts/CartContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CompreMatch — Ofertas locais e compras inteligentes",
+  title: "CompreMatch — Economize no supermercado comparando encartes",
   description:
-    "Plataforma inteligente de descoberta de ofertas locais de supermercados, carrinho agrupado por mercado e roteirização.",
+    "Compare ofertas dos supermercados da sua região, monte sua cesta inteligente multiloja e trace o trajeto mais econômico.",
 };
 
 export default function RootLayout({
@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#fcfaf5] text-brand-dark">
+      <body className="min-h-full flex flex-col bg-[#FAFAF9] text-brand-dark">
         <AuthProvider>
           <CartProvider>{children}</CartProvider>
         </AuthProvider>

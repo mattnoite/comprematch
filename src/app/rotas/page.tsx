@@ -11,7 +11,6 @@ import {
   Home,
   Loader2,
   LocateFixed,
-  MapPin,
   Navigation,
   PiggyBank,
   Route as RouteIcon,
@@ -26,7 +25,7 @@ import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[400px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-brand-taupe bg-[#faf7ef] text-brand-taupe sm:h-[480px] lg:h-[560px]">
+    <div className="flex h-[400px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-stone-200/80 bg-white text-brand-taupe sm:h-[480px] lg:h-[560px]">
       <Loader2
         className="h-6 w-6 animate-spin text-brand-gold"
         aria-hidden="true"
@@ -48,7 +47,7 @@ interface MarketBucket {
 }
 
 interface OrderedStop extends MarketBucket {
-  letter: string;
+  stopNumber: number;
 }
 
 interface OsrmRouteLeg {
@@ -123,7 +122,6 @@ function orderMarketsFromOrigin(
 
   if (origin) {
     if (markets.length <= 7) {
-      // Busca exata de menor percurso aberto para até 7 lojas
       let bestOrder = ordered;
       let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -156,7 +154,6 @@ function orderMarketsFromOrigin(
       permute([], markets, 0, origin.lat, origin.lng);
       ordered = bestOrder;
     } else {
-      // Heurística do vizinho mais próximo para listas grandes
       const remaining = [...markets];
       const result: MarketBucket[] = [];
       let curLat = origin.lat;
@@ -189,7 +186,7 @@ function orderMarketsFromOrigin(
 
   return ordered.map((market, index) => ({
     ...market,
-    letter: String.fromCharCode(66 + index), // B, C, D...
+    stopNumber: index + 1,
   }));
 }
 
@@ -252,7 +249,6 @@ export default function RotasPage() {
     Record<string, number>
   >({});
 
-  // Enriquecimento opcional de preco_normal caso itens antigos do localStorage não tenham esse campo
   useEffect(() => {
     const missingIds = items
       .filter((item) => item.preco_normal === undefined)
@@ -322,7 +318,7 @@ export default function RotasPage() {
         lng: stop.lng,
         subtotal: stop.subtotal,
         itemCount: stop.itemCount,
-        letter: stop.letter,
+        stopNumber: stop.stopNumber,
       })),
     [orderedStops]
   );
@@ -330,7 +326,7 @@ export default function RotasPage() {
   const totalFinalCompras = getCartTotal();
   const totalItemCount = getItemCount();
 
-  const economiaTotalBruta = useMemo(() => {
+  const economiaLiquida = useMemo(() => {
     return items.reduce((sum, item) => {
       const normal =
         item.preco_normal ?? fallbackNormalPrices[item.id] ?? item.preco_oferta;
@@ -359,7 +355,6 @@ export default function RotasPage() {
   const totalDurationSeconds = activeRoute?.durationSeconds ?? null;
   const routeLegs = activeRoute?.legs ?? EMPTY_LEGS;
 
-  // Cálculo da rota no OSRM sempre que houver origem + mercados
   useEffect(() => {
     if (!routeKey || !origin || orderedStops.length === 0) {
       return;
@@ -416,8 +411,8 @@ export default function RotasPage() {
           key: currentKey,
           message:
             err instanceof Error
-              ? `Não foi possível calcular a rota viária no OSRM: ${err.message}`
-              : "Erro ao consultar o serviço de rotas OSRM.",
+              ? `Não foi possível calcular a rota viária: ${err.message}`
+              : "Erro ao consultar o serviço de rotas.",
         });
       }
     }
@@ -433,7 +428,7 @@ export default function RotasPage() {
   function handleUseCurrentLocation() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setOriginError(
-        "Geolocalização não suportada neste navegador. Informe seu CEP ou endereço."
+        "Geolocalização indisponível neste navegador. Informe seu CEP ou endereço."
       );
       return;
     }
@@ -446,7 +441,7 @@ export default function RotasPage() {
         setOrigin({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-          label: "Minha localização atual (GPS)",
+          label: "Minha localização atual",
         });
         setLocatingGps(false);
       },
@@ -458,7 +453,7 @@ export default function RotasPage() {
           );
         } else {
           setOriginError(
-            "Não foi possível obter sua localização atual. Tente digitar seu CEP ou endereço."
+            "Não foi possível obter sua localização atual. Tente informar seu CEP ou endereço."
           );
         }
       },
@@ -518,358 +513,356 @@ export default function RotasPage() {
   const wazeUrl = useMemo(() => buildWazeUrl(orderedStops), [orderedStops]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#fcfaf5] text-brand-dark">
-      {/* Navbar superior */}
-      <header className="sticky top-0 z-30 border-b border-brand-taupe/25 bg-brand-dark text-white">
+    <div className="flex min-h-screen flex-col bg-[#FAFAF9] text-brand-dark">
+      {/* Barra Superior */}
+      <header className="sticky top-0 z-30 border-b border-stone-200/70 bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-brand-taupe px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-taupe/40"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200/90 bg-[#FAFAF9] px-3 py-1.5 text-xs font-semibold text-brand-dark transition-colors hover:border-brand-olive hover:bg-white"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              Voltar à Vitrine
+              Ofertas
             </Link>
 
-            <div className="hidden items-center gap-2 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-yellow text-brand-dark">
-                <RouteIcon className="h-4 w-4" aria-hidden="true" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-yellow text-brand-dark shadow-xs">
+                <Navigation className="h-4 w-4" aria-hidden="true" />
               </div>
-              <span className="text-sm font-bold tracking-tight text-white">
-                CompreMatch · Roteirização Multiloja
+              <span className="text-sm font-extrabold tracking-tight text-brand-dark sm:text-base">
+                GPS de Economia
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-olive/35 px-3 py-1 text-brand-yellow">
-              <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
-              {totalItemCount} {totalItemCount === 1 ? "item" : "itens"} ·{" "}
-              {marketBuckets.length}{" "}
-              {marketBuckets.length === 1 ? "mercado" : "mercados"}
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-stone-200/80 bg-[#FAFAF9] px-3 py-1 text-xs font-semibold text-brand-taupe">
+            <ShoppingBag
+              className="h-3.5 w-3.5 text-brand-olive"
+              aria-hidden="true"
+            />
+            {totalItemCount} {totalItemCount === 1 ? "item" : "itens"} ·{" "}
+            {formatBRL(totalFinalCompras)}
+          </span>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {!hydrated ? (
-          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-brand-taupe/25 bg-white p-8">
+          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-stone-200/70 bg-white p-8">
             <Loader2
               className="h-7 w-7 animate-spin text-brand-gold"
               aria-hidden="true"
             />
             <p className="text-sm font-medium text-brand-taupe">
-              Carregando seu carrinho...
+              Carregando sua cesta...
             </p>
           </div>
         ) : items.length === 0 ? (
-          <section className="mx-auto flex max-w-lg flex-col items-center justify-center rounded-2xl border border-brand-taupe bg-white px-6 py-16 text-center shadow-2xs">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-yellow/25 text-brand-dark">
+          <section className="mx-auto flex max-w-lg flex-col items-center justify-center rounded-2xl border border-stone-200/70 bg-white px-6 py-16 text-center shadow-2xs">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-yellow/20 text-brand-dark">
               <ShoppingBag className="h-7 w-7" aria-hidden="true" />
             </div>
             <h1 className="mt-5 text-xl font-extrabold text-brand-dark">
-              Seu carrinho está vazio
+              Sua cesta está vazia
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-brand-taupe">
               Adicione ofertas ao carrinho para traçar sua rota
             </p>
             <Link
               href="/"
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-yellow px-5 py-3 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-yellow px-5 py-3 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Voltar para a Vitrine de Ofertas
+              Voltar para as ofertas
             </Link>
           </section>
         ) : (
           <div className="space-y-6">
-            {/* Bloco de Entrada da Origem do Usuário */}
-            <section
-              aria-label="Ponto de partida"
-              className="overflow-hidden rounded-2xl border border-brand-taupe bg-white shadow-2xs"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-dark px-5 py-3.5 text-white">
-                <div className="flex items-center gap-2">
-                  <Home
-                    className="h-4 w-4 text-brand-yellow"
-                    aria-hidden="true"
-                  />
-                  <h1 className="text-sm font-bold uppercase tracking-wider">
-                    Ponto A · Origem da sua Rota
-                  </h1>
-                </div>
-                {origin && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-yellow/20 px-2.5 py-0.5 text-xs font-semibold text-brand-yellow">
-                    <MapPin className="h-3 w-3" aria-hidden="true" />
-                    Origem definida
-                  </span>
-                )}
-              </div>
+            {/* Cabeçalho + 3 KPIs Limpos */}
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-brand-dark sm:text-3xl">
+                Seu trajeto mais econômico
+              </h1>
+              <p className="mt-1 text-sm text-brand-taupe">
+                Informe seu ponto de partida para otimizar a ordem das paradas e
+                abrir a navegação no celular.
+              </p>
 
-              <div className="space-y-4 p-5">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-2xl border border-stone-200/70 bg-white p-5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-brand-taupe">
+                      Distância Total
+                    </span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#FAFAF9] text-brand-olive ring-1 ring-stone-200/70">
+                      <RouteIcon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <p className="mt-2 text-2xl font-black tracking-tight text-brand-dark">
+                    {totalDistanceMeters !== null
+                      ? formatDistanceKm(totalDistanceMeters)
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-brand-taupe">
+                    {origin
+                      ? `${orderedStops.length} ${orderedStops.length === 1 ? "parada no trajeto" : "paradas no trajeto"}`
+                      : "Defina seu ponto de partida"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-stone-200/70 bg-white p-5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-brand-taupe">
+                      Tempo Estimado
+                    </span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#FAFAF9] text-brand-olive ring-1 ring-stone-200/70">
+                      <Clock className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <p className="mt-2 text-2xl font-black tracking-tight text-brand-dark">
+                    {totalDurationSeconds !== null
+                      ? formatDuration(totalDurationSeconds)
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-brand-taupe">
+                    Deslocamento estimado de carro
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-brand-gold/40 bg-white p-5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-brand-taupe">
+                      Economia Líquida
+                    </span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-yellow/25 text-brand-dark">
+                      <PiggyBank className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <p className="mt-2 text-2xl font-black tracking-tight text-emerald-700">
+                    {formatBRL(economiaLiquida)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-brand-taupe">
+                    Total da compra:{" "}
+                    <strong className="font-semibold text-brand-dark">
+                      {formatBRL(totalFinalCompras)}
+                    </strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Controle de Origem */}
+            <section
+              aria-label="Definir ponto de partida"
+              className="rounded-2xl border border-stone-200/70 bg-white p-5 shadow-2xs"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                <button
+                  id="use-gps-btn"
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={locatingGps}
+                  className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {locatingGps ? (
+                    <>
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Localizando...
+                    </>
+                  ) : (
+                    <>
+                      <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                      Usar minha localização atual
+                    </>
+                  )}
+                </button>
+
+                <span className="hidden text-xs font-medium text-brand-taupe lg:inline">
+                  ou
+                </span>
+
+                <form
+                  onSubmit={(e) => void handleSearchAddress(e)}
+                  className="flex flex-1 flex-col gap-2 sm:flex-row"
+                >
+                  <label htmlFor="origin-address-input" className="sr-only">
+                    CEP ou endereço de saída
+                  </label>
+                  <div className="relative flex-1">
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-brand-olive"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="origin-address-input"
+                      type="text"
+                      value={addressQuery}
+                      onChange={(e) => setAddressQuery(e.target.value)}
+                      placeholder="Digite seu CEP (ex: 04012-000) ou endereço de partida..."
+                      className="w-full rounded-xl border border-stone-200/90 bg-[#FAFAF9] py-2.5 pr-3.5 pl-10 text-sm font-medium text-brand-dark placeholder:text-brand-taupe/60 transition-colors focus:border-brand-olive focus:bg-white focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                    />
+                  </div>
                   <button
-                    id="use-gps-btn"
-                    type="button"
-                    onClick={handleUseCurrentLocation}
-                    disabled={locatingGps}
-                    className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-60"
+                    id="search-address-btn"
+                    type="submit"
+                    disabled={geocoding}
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-brand-olive/50 bg-white px-4 py-2.5 text-sm font-semibold text-brand-dark transition-all hover:border-brand-gold hover:bg-brand-yellow/15 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {locatingGps ? (
+                    {geocoding ? (
                       <>
                         <Loader2
                           className="h-4 w-4 animate-spin"
                           aria-hidden="true"
                         />
-                        Obtendo GPS...
+                        Buscando...
                       </>
                     ) : (
                       <>
-                        <LocateFixed className="h-4 w-4" aria-hidden="true" />
-                        Usar minha localização atual
+                        <Search className="h-4 w-4" aria-hidden="true" />
+                        Buscar
                       </>
                     )}
                   </button>
-
-                  <span className="hidden text-xs font-semibold uppercase text-brand-taupe lg:inline">
-                    ou
-                  </span>
-
-                  <form
-                    onSubmit={(e) => void handleSearchAddress(e)}
-                    className="flex flex-1 flex-col gap-2 sm:flex-row"
-                  >
-                    <label htmlFor="origin-address-input" className="sr-only">
-                      CEP ou endereço de saída
-                    </label>
-                    <div className="relative flex-1">
-                      <Search
-                        className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-brand-olive"
-                        aria-hidden="true"
-                      />
-                      <input
-                        id="origin-address-input"
-                        type="text"
-                        value={addressQuery}
-                        onChange={(e) => setAddressQuery(e.target.value)}
-                        placeholder="Digite seu CEP (ex: 04012-000) ou endereço de saída..."
-                        className="w-full rounded-xl border border-brand-taupe bg-white py-2.5 pr-3.5 pl-10 text-sm font-medium text-brand-dark placeholder:text-brand-taupe/60 focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      id="search-address-btn"
-                      type="submit"
-                      disabled={geocoding}
-                      className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-brand-taupe bg-[#faf7ef] px-4 py-2.5 text-sm font-bold text-brand-dark transition-colors hover:border-brand-gold hover:bg-brand-yellow/20 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {geocoding ? (
-                        <>
-                          <Loader2
-                            className="h-4 w-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                          Buscando...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4" aria-hidden="true" />
-                          Buscar Endereço
-                        </>
-                      )}
-                    </button>
-                  </form>
-                </div>
-
-                {origin && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-gold/50 bg-brand-yellow/10 px-4 py-2.5 text-xs">
-                    <span className="font-semibold text-brand-dark">
-                      Partindo de:{" "}
-                      <strong className="font-bold">{origin.label}</strong>
-                    </span>
-                    <span className="font-mono text-[11px] text-brand-taupe">
-                      {origin.lat.toFixed(5)}, {origin.lng.toFixed(5)}
-                    </span>
-                  </div>
-                )}
-
-                {originError && (
-                  <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700"
-                  >
-                    <AlertTriangle
-                      className="mt-0.5 h-4 w-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                    <span>{originError}</span>
-                  </div>
-                )}
-
-                {routeError && (
-                  <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-xl border border-amber-400 bg-amber-50 px-4 py-2.5 text-xs font-medium text-brand-dark"
-                  >
-                    <AlertTriangle
-                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
-                      aria-hidden="true"
-                    />
-                    <span>{routeError}</span>
-                  </div>
-                )}
+                </form>
               </div>
+
+              {origin && (
+                <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-gold/40 bg-brand-yellow/10 px-4 py-2 text-xs">
+                  <span className="flex items-center gap-1.5 font-medium text-brand-dark">
+                    <Home
+                      className="h-3.5 w-3.5 text-brand-olive"
+                      aria-hidden="true"
+                    />
+                    Partindo de:{" "}
+                    <strong className="font-bold">{origin.label}</strong>
+                  </span>
+                </div>
+              )}
+
+              {originError && (
+                <div
+                  role="alert"
+                  className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span>{originError}</span>
+                </div>
+              )}
+
+              {routeError && (
+                <div
+                  role="alert"
+                  className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-brand-dark"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+                    aria-hidden="true"
+                  />
+                  <span>{routeError}</span>
+                </div>
+              )}
             </section>
 
-            {/* Mapa Interativo + Painel de Resumo da Jornada */}
+            {/* Mapa Limpo + Stop List Vertical */}
             <div className="grid gap-6 lg:grid-cols-12">
-              {/* Coluna do Mapa */}
               <section
-                aria-label="Mapa da rota"
-                className="space-y-3 lg:col-span-7"
+                aria-label="Mapa do trajeto"
+                className="relative lg:col-span-7"
               >
-                <div className="relative">
-                  <RouteMap
-                    origin={origin}
-                    stops={mapStops}
-                    routeCoordinates={routeCoordinates}
-                  />
+                <RouteMap
+                  origin={origin}
+                  stops={mapStops}
+                  routeCoordinates={routeCoordinates}
+                />
 
-                  {routeLoading && (
-                    <div className="absolute top-4 right-4 z-[1000] inline-flex items-center gap-2 rounded-xl border border-brand-gold bg-brand-dark px-3.5 py-2 text-xs font-bold text-brand-yellow shadow-lg">
-                      <Loader2
-                        className="h-3.5 w-3.5 animate-spin"
-                        aria-hidden="true"
-                      />
-                      Calculando rota no OSRM...
-                    </div>
-                  )}
-                </div>
-
-                {!origin && (
-                  <p className="rounded-xl border border-brand-taupe/30 bg-white px-4 py-2.5 text-xs text-brand-taupe">
-                    Os mercados do seu carrinho já estão marcados no mapa. Defina
-                    seu ponto de partida acima para traçar a rota viária
-                    completa.
-                  </p>
+                {routeLoading && (
+                  <div className="absolute top-4 left-4 z-[1000] inline-flex items-center gap-2 rounded-xl bg-brand-dark px-3.5 py-2 text-xs font-semibold text-brand-yellow shadow-lg">
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin"
+                      aria-hidden="true"
+                    />
+                    Traçando trajeto mais rápido...
+                  </div>
                 )}
               </section>
 
-              {/* Painel de Resumo da Jornada */}
+              {/* Stop List Vertical */}
               <aside
-                aria-label="Resumo da jornada de compras"
-                className="space-y-5 lg:col-span-5"
+                aria-label="Sequência de paradas"
+                className="lg:col-span-5"
               >
-                {/* Card de Métricas */}
-                <section className="overflow-hidden rounded-2xl border border-brand-taupe bg-white shadow-2xs">
-                  <div className="bg-brand-dark px-5 py-3.5 text-white">
-                    <h2 className="text-sm font-bold uppercase tracking-wider">
-                      Resumo da Jornada
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 p-4">
-                    <div className="rounded-xl border border-brand-taupe/25 bg-[#faf7ef] p-3.5">
-                      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-taupe">
-                        <RouteIcon
-                          className="h-3.5 w-3.5 text-brand-olive"
-                          aria-hidden="true"
-                        />
-                        Distância Total
-                      </span>
-                      <p className="mt-1.5 text-xl font-extrabold text-brand-dark">
-                        {totalDistanceMeters !== null
-                          ? formatDistanceKm(totalDistanceMeters)
-                          : "—"}
+                <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4">
+                    <div>
+                      <h2 className="text-sm font-extrabold tracking-tight text-brand-dark">
+                        Sequência de Paradas
+                      </h2>
+                      <p className="text-xs text-brand-taupe">
+                        Ordem otimizada pela menor distância
                       </p>
                     </div>
-
-                    <div className="rounded-xl border border-brand-taupe/25 bg-[#faf7ef] p-3.5">
-                      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-taupe">
-                        <Clock
-                          className="h-3.5 w-3.5 text-brand-olive"
-                          aria-hidden="true"
-                        />
-                        Tempo Estimado
-                      </span>
-                      <p className="mt-1.5 text-xl font-extrabold text-brand-dark">
-                        {totalDurationSeconds !== null
-                          ? formatDuration(totalDurationSeconds)
-                          : "—"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-brand-gold/50 bg-brand-yellow/15 p-3.5">
-                      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-taupe">
-                        <PiggyBank
-                          className="h-3.5 w-3.5 text-brand-olive"
-                          aria-hidden="true"
-                        />
-                        Economia Bruta
-                      </span>
-                      <p className="mt-1.5 text-xl font-extrabold text-brand-dark">
-                        {formatBRL(economiaTotalBruta)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-brand-dark bg-brand-dark p-3.5 text-white">
-                      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-yellow">
-                        <ShoppingBag
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        />
-                        Valor Final
-                      </span>
-                      <p className="mt-1.5 text-xl font-extrabold text-white">
-                        {formatBRL(totalFinalCompras)}
-                      </p>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Sequência de Paradas Sugeridas */}
-                <section className="overflow-hidden rounded-2xl border border-brand-taupe bg-white shadow-2xs">
-                  <div className="flex items-center justify-between border-b border-brand-taupe/25 bg-[#faf7ef] px-5 py-3">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-brand-dark">
-                      Sequência de Paradas Sugeridas
-                    </h2>
-                    <span className="rounded-full bg-brand-yellow px-2.5 py-0.5 text-[11px] font-bold text-brand-dark">
+                    <span className="rounded-full bg-brand-yellow/25 px-2.5 py-1 text-xs font-bold text-brand-dark">
                       {orderedStops.length}{" "}
-                      {orderedStops.length === 1 ? "parada" : "paradas"}
+                      {orderedStops.length === 1 ? "loja" : "lojas"}
                     </span>
                   </div>
 
-                  <ol className="divide-y divide-brand-taupe/20">
-                    {origin && (
-                      <li className="flex items-start gap-3 px-5 py-3.5">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand-yellow bg-brand-dark text-xs font-extrabold text-brand-yellow">
-                          A
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-brand-dark">
-                            Saída · Sua Origem
-                          </p>
-                          <p className="truncate text-[11px] text-brand-taupe">
-                            {origin.label}
-                          </p>
-                        </div>
-                      </li>
-                    )}
+                  {/* Lista vertical conectada por linha sequencial */}
+                  <ol className="relative px-5 py-5">
+                    {/* Origem */}
+                    <li className="relative flex gap-3.5 pb-6">
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-8 bottom-0 left-[15px] w-0.5 bg-stone-200"
+                      />
+                      <span className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-brand-yellow bg-brand-dark text-brand-yellow shadow-xs">
+                        <Home className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="text-xs font-bold uppercase tracking-wide text-brand-olive">
+                          Origem
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-brand-dark">
+                          {origin ? origin.label : "Aguardando ponto de partida"}
+                        </p>
+                      </div>
+                    </li>
 
+                    {/* Mercados 1, 2, ... */}
                     {orderedStops.map((stop, idx) => {
                       const leg = routeLegs[idx];
+                      const isLast = idx === orderedStops.length - 1;
+
                       return (
                         <li
                           key={stop.mercado_id}
-                          className="space-y-2 px-5 py-4"
+                          className={`relative flex gap-3.5 ${isLast ? "" : "pb-6"}`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-start gap-3">
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand-dark bg-brand-yellow text-xs font-black text-brand-dark">
-                                {stop.letter}
-                              </span>
+                          {!isLast && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute top-8 bottom-0 left-[15px] w-0.5 bg-brand-yellow/60"
+                            />
+                          )}
+
+                          <span className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-brand-dark bg-brand-yellow text-xs font-black text-brand-dark shadow-xs">
+                            {stop.stopNumber}
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="flex items-center gap-1.5 text-sm font-bold text-brand-dark">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-brand-olive">
+                                  Mercado {stop.stopNumber}
+                                </p>
+                                <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-brand-dark">
                                   <Store
                                     className="h-3.5 w-3.5 shrink-0 text-brand-olive"
                                     aria-hidden="true"
@@ -877,68 +870,74 @@ export default function RotasPage() {
                                   <span className="truncate">
                                     {stop.nome_rede}
                                   </span>
-                                </p>
+                                </h3>
                                 <p className="text-xs text-brand-taupe">
                                   {stop.unidade}
                                 </p>
-                                {leg && (
-                                  <p className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-brand-yellow/15 px-2 py-0.5 text-[11px] font-semibold text-brand-dark">
-                                    <Navigation
-                                      className="h-3 w-3 text-brand-olive"
-                                      aria-hidden="true"
-                                    />
-                                    Trecho: {formatDistanceKm(leg.distance)} ·{" "}
-                                    {formatDuration(leg.duration)}
-                                  </p>
-                                )}
+                              </div>
+
+                              <div className="shrink-0 text-right">
+                                <p className="text-[11px] text-brand-taupe">
+                                  Subtotal
+                                </p>
+                                <p className="text-sm font-black text-brand-dark">
+                                  {formatBRL(stop.subtotal)}
+                                </p>
                               </div>
                             </div>
 
-                            <div className="shrink-0 text-right">
-                              <p className="text-[11px] font-medium text-brand-taupe">
-                                Subtotal
+                            {leg && (
+                              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#FAFAF9] px-2.5 py-0.5 text-[11px] font-semibold text-brand-taupe ring-1 ring-stone-200/80">
+                                <Navigation
+                                  className="h-3 w-3 text-brand-gold"
+                                  aria-hidden="true"
+                                />
+                                {formatDistanceKm(leg.distance)} ·{" "}
+                                {formatDuration(leg.duration)}
                               </p>
-                              <p className="text-sm font-extrabold text-brand-dark">
-                                {formatBRL(stop.subtotal)}
-                              </p>
-                            </div>
-                          </div>
+                            )}
 
-                          <ul className="ml-10 space-y-1 rounded-xl border border-brand-taupe/20 bg-[#fcfaf5] px-3 py-2 text-xs">
-                            {stop.items.map((item) => (
-                              <li
-                                key={item.id}
-                                className="flex items-center justify-between gap-2 text-brand-dark"
-                              >
-                                <span className="truncate">
-                                  <strong className="font-semibold">
-                                    {item.quantity}x
-                                  </strong>{" "}
-                                  {item.produto_nome}
-                                </span>
-                                <span className="shrink-0 font-semibold text-brand-taupe">
-                                  {formatBRL(item.preco_oferta * item.quantity)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
+                            <ul className="mt-2.5 space-y-1 rounded-xl border border-stone-200/70 bg-[#FAFAF9] px-3 py-2 text-xs">
+                              {stop.items.map((item) => (
+                                <li
+                                  key={item.id}
+                                  className="flex items-center justify-between gap-2 text-brand-dark"
+                                >
+                                  <span className="truncate">
+                                    <strong className="font-semibold">
+                                      {item.quantity}x
+                                    </strong>{" "}
+                                    {item.produto_nome}
+                                  </span>
+                                  <span className="shrink-0 font-semibold text-brand-taupe">
+                                    {formatBRL(
+                                      item.preco_oferta * item.quantity
+                                    )}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         </li>
                       );
                     })}
                   </ol>
 
-                  {/* Botões externos Google Maps / Waze */}
-                  <div className="space-y-2.5 border-t border-brand-taupe/25 bg-[#faf7ef] p-4">
+                  {/* Navegação Mobile (Google Maps / Waze) */}
+                  <div className="space-y-2.5 border-t border-stone-100 bg-stone-50/70 p-4">
                     {googleMapsUrl && (
                       <a
                         href={googleMapsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-3 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow py-3.5 text-sm font-bold text-brand-dark shadow-sm transition-all hover:bg-brand-gold active:scale-95"
                       >
                         <Navigation className="h-4 w-4" aria-hidden="true" />
                         Abrir Rota no Google Maps / Waze
-                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                        <ExternalLink
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
                       </a>
                     )}
 
@@ -947,14 +946,17 @@ export default function RotasPage() {
                         href={wazeUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-taupe bg-white px-4 py-2 text-xs font-bold text-brand-dark transition-colors hover:border-brand-gold hover:bg-brand-yellow/15"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-olive/45 bg-white py-2.5 text-xs font-semibold text-brand-dark transition-all hover:border-brand-gold hover:bg-brand-yellow/15 active:scale-95"
                       >
-                        Iniciar 1ª parada direto no Waze
-                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                        Abrir 1ª parada direto no Waze
+                        <ExternalLink
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
                       </a>
                     )}
                   </div>
-                </section>
+                </div>
               </aside>
             </div>
           </div>
