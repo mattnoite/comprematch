@@ -37,13 +37,17 @@ interface EditableOffer extends ExtractedOffer {
   localId: string;
 }
 
+function getTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function getDefaultDataFim(): string {
   const date = new Date();
   date.setDate(date.getDate() + 5);
   return date.toISOString().slice(0, 10);
 }
 
-function createEmptyOffer(): EditableOffer {
+function createEmptyOffer(defaultDataFim: string): EditableOffer {
   return {
     localId: crypto.randomUUID(),
     produto_nome: "",
@@ -53,6 +57,7 @@ function createEmptyOffer(): EditableOffer {
     preco_normal: 0,
     preco_oferta: 0,
     is_clube: false,
+    data_fim: defaultDataFim,
   };
 }
 
@@ -71,6 +76,13 @@ export default function AdminUploadPage() {
   const [mercados, setMercados] = useState<Mercado[]>([]);
   const [loadingMercados, setLoadingMercados] = useState<boolean>(true);
   const [mercadoId, setMercadoId] = useState<string>("");
+  const [mercadoDetectionStatus, setMercadoDetectionStatus] = useState<
+    "idle" | "matched" | "unmatched"
+  >("idle");
+  const [mercadoNomeDetectado, setMercadoNomeDetectado] = useState<
+    string | null
+  >(null);
+  const [dataInicio, setDataInicio] = useState<string>(getTodayIso);
   const [dataFim, setDataFim] = useState<string>(getDefaultDataFim);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -110,9 +122,6 @@ export default function AdminUploadPage() {
 
         const list = (data as Mercado[]) ?? [];
         setMercados(list);
-        if (list.length > 0) {
-          setMercadoId((current) => current || list[0].id);
-        }
       } catch (err) {
         if (!mounted) return;
         showToast(
@@ -182,10 +191,6 @@ export default function AdminUploadPage() {
   }
 
   async function handleExtractWithAI() {
-    if (!mercadoId) {
-      showToast("error", "Selecione o mercado", "Escolha um mercado emissor.");
-      return;
-    }
     if (!selectedFile) {
       showToast(
         "error",
@@ -207,7 +212,9 @@ export default function AdminUploadPage() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      formData.append("mercado_id", mercadoId);
+      if (mercadoId) {
+        formData.append("mercado_id", mercadoId);
+      }
 
       const response = await fetch("/api/extract", {
         method: "POST",
@@ -234,8 +241,30 @@ export default function AdminUploadPage() {
         ? payload.ofertas
         : [];
 
-      if (payload.data_fim_sugerida) {
-        setDataFim(payload.data_fim_sugerida);
+      const suggestedId =
+        typeof payload.mercado_sugerido_id === "string" &&
+        payload.mercado_sugerido_id.trim()
+          ? payload.mercado_sugerido_id.trim()
+          : null;
+      const matchedMercado = suggestedId
+        ? mercados.find((m) => m.id === suggestedId) ?? null
+        : null;
+
+      setMercadoNomeDetectado(payload.mercado_nome_detectado ?? null);
+      if (matchedMercado) {
+        setMercadoId(matchedMercado.id);
+        setMercadoDetectionStatus("matched");
+      } else {
+        setMercadoId("");
+        setMercadoDetectionStatus("unmatched");
+      }
+
+      const resolvedDataFim =
+        payload.data_fim_sugerida || dataFim || getDefaultDataFim();
+      setDataFim(resolvedDataFim);
+
+      if (payload.data_inicio_sugerida) {
+        setDataInicio(payload.data_inicio_sugerida);
       }
 
       if (extractedList.length === 0) {
@@ -250,6 +279,7 @@ export default function AdminUploadPage() {
       setOfertas(
         extractedList.map((item) => ({
           ...item,
+          data_fim: item.data_fim || resolvedDataFim,
           localId: crypto.randomUUID(),
         }))
       );
@@ -287,7 +317,41 @@ export default function AdminUploadPage() {
   }
 
   function addManualRow() {
-    setOfertas((prev) => [...prev, createEmptyOffer()]);
+    setOfertas((prev) => [
+      ...prev,
+      createEmptyOffer(dataFim || getDefaultDataFim()),
+    ]);
+  }
+
+  function handleGlobalDataFimChange(nextDate: string) {
+    const previousGlobalDate = dataFim;
+    setDataFim(nextDate);
+    if (!nextDate) return;
+    setOfertas((prev) =>
+      prev.map((row) =>
+        !row.data_fim || row.data_fim === previousGlobalDate
+          ? { ...row, data_fim: nextDate }
+          : row
+      )
+    );
+  }
+
+  function applyGlobalValidityToAllItems() {
+    if (!dataFim) {
+      showToast(
+        "error",
+        "Informe a validade geral",
+        "Defina a Data de Validade Geral do Encarte antes de aplicar aos itens."
+      );
+      return;
+    }
+
+    setOfertas((prev) => prev.map((row) => ({ ...row, data_fim: dataFim })));
+    showToast(
+      "success",
+      "Validade aplicada a todos os itens",
+      `Todas as ${ofertas.length} ofertas agora expiram em ${dataFim}.`
+    );
   }
 
   async function handleSaveToDatabase() {
@@ -320,8 +384,13 @@ export default function AdminUploadPage() {
     setSaving(true);
     try {
       const supabase = getSupabaseClient();
-      const todayIso = new Date().toISOString().slice(0, 10);
-      const dataInicio = todayIso <= dataFim ? todayIso : dataFim;
+      const todayIso = getTodayIso();
+      const resolvedDataInicio =
+        dataInicio && dataInicio <= dataFim
+          ? dataInicio
+          : todayIso <= dataFim
+            ? todayIso
+            : dataFim;
 
       let arquivoUrl = `manual://${mercadoId}/${Date.now()}`;
       if (selectedFile) {
@@ -347,7 +416,7 @@ export default function AdminUploadPage() {
         .insert({
           mercado_id: mercadoId,
           arquivo_url: arquivoUrl,
-          data_inicio: dataInicio,
+          data_inicio: resolvedDataInicio,
           data_fim: dataFim,
         })
         .select("id")
@@ -367,6 +436,7 @@ export default function AdminUploadPage() {
         const precoNormalRaw = Number(item.preco_normal.toFixed(2));
         const precoNormal =
           precoNormalRaw >= precoOferta ? precoNormalRaw : precoOferta;
+        const itemDataFim = item.data_fim?.trim() || dataFim;
 
         return {
           encarte_id: encarteCriado.id,
@@ -378,7 +448,7 @@ export default function AdminUploadPage() {
           preco_normal: precoNormal,
           preco_oferta: precoOferta,
           is_clube: item.is_clube,
-          data_fim: dataFim,
+          data_fim: itemDataFim,
         };
       });
 
@@ -404,6 +474,10 @@ export default function AdminUploadPage() {
       // Limpeza dos campos após publicação
       clearSelectedFile();
       setOfertas([]);
+      setMercadoId("");
+      setMercadoDetectionStatus("idle");
+      setMercadoNomeDetectado(null);
+      setDataInicio(getTodayIso());
       setDataFim(getDefaultDataFim());
     } catch (err) {
       showToast(
@@ -445,7 +519,7 @@ export default function AdminUploadPage() {
             id="extract-ai-btn"
             type="button"
             onClick={() => void handleExtractWithAI()}
-            disabled={extracting || !selectedFile || !mercadoId}
+            disabled={extracting || !selectedFile}
             className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-55"
           >
             {extracting ? (
@@ -486,59 +560,103 @@ export default function AdminUploadPage() {
       {/* Configuração do Encarte */}
       <section className="grid gap-4 rounded-2xl border border-brand-taupe bg-white p-5 sm:grid-cols-2">
         <div>
-          <label
-            htmlFor="mercado-select"
-            className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
-          >
-            <Store className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
-            Mercado Emissor
-          </label>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <label
+              htmlFor="mercado-select"
+              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
+            >
+              <Store className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
+              Mercado Emissor
+            </label>
+
+            {mercadoDetectionStatus === "matched" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-gold/60 bg-brand-yellow/25 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
+                <Sparkles className="h-3 w-3 text-brand-olive" aria-hidden="true" />
+                Identificado automaticamente via IA
+              </span>
+            )}
+
+            {mercadoDetectionStatus === "unmatched" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
+                <AlertTriangle className="h-3 w-3 text-amber-600" aria-hidden="true" />
+                Selecione o mercado manualmente
+              </span>
+            )}
+          </div>
+
           <select
             id="mercado-select"
             value={mercadoId}
-            onChange={(e) => setMercadoId(e.target.value)}
+            onChange={(e) => {
+              setMercadoId(e.target.value);
+              setMercadoDetectionStatus("idle");
+            }}
             disabled={loadingMercados}
-            className="w-full rounded-xl border border-brand-taupe bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none disabled:opacity-60"
+            className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none disabled:opacity-60 ${
+              mercadoDetectionStatus === "unmatched"
+                ? "border-brand-gold ring-2 ring-brand-yellow/35"
+                : "border-brand-taupe"
+            }`}
           >
             {loadingMercados ? (
               <option value="">Carregando mercados...</option>
             ) : mercados.length === 0 ? (
               <option value="">Nenhum mercado cadastrado</option>
             ) : (
-              mercados.map((mercado) => (
-                <option key={mercado.id} value={mercado.id}>
-                  {mercado.nome_rede} — {mercado.unidade}
+              <>
+                <option value="">
+                  Selecione um mercado (ou deixe a IA identificar)...
                 </option>
-              ))
+                {mercados.map((mercado) => (
+                  <option key={mercado.id} value={mercado.id}>
+                    {mercado.nome_rede} — {mercado.unidade}
+                  </option>
+                ))}
+              </>
             )}
           </select>
-          {selectedMercado && (
+
+          {selectedMercado ? (
             <p className="mt-1.5 text-xs text-brand-taupe">
               {selectedMercado.endereco}
+              {mercadoDetectionStatus === "matched" && mercadoNomeDetectado
+                ? ` · Detectado na arte: "${mercadoNomeDetectado}"`
+                : ""}
+            </p>
+          ) : mercadoDetectionStatus === "unmatched" ? (
+            <p className="mt-1.5 text-xs font-medium text-brand-taupe">
+              {mercadoNomeDetectado
+                ? `Identificado na arte: "${mercadoNomeDetectado}" (sem correspondência exata). Selecione o mercado manualmente.`
+                : "Não foi possível identificar o mercado no encarte. Selecione o mercado manualmente."}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs text-brand-taupe">
+              Opcional antes de extrair: a IA tenta identificar o mercado
+              automaticamente.
             </p>
           )}
         </div>
 
         <div>
           <label
-            htmlFor="data-fim-input"
+            htmlFor="data-inicio-input"
             className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
           >
             <Calendar
               className="h-3.5 w-3.5 text-brand-olive"
               aria-hidden="true"
             />
-            Validade das Ofertas (data_fim)
+            Início da Vigência (data_inicio)
           </label>
           <input
-            id="data-fim-input"
+            id="data-inicio-input"
             type="date"
-            value={dataFim}
-            onChange={(e) => setDataFim(e.target.value)}
+            value={dataInicio}
+            onChange={(e) => setDataInicio(e.target.value)}
             className="w-full rounded-xl border border-brand-taupe bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
           />
           <p className="mt-1.5 text-xs text-brand-taupe">
-            Preenchida automaticamente pela IA quando identificada no encarte.
+            Preenchida automaticamente quando identificada no encarte.
           </p>
         </div>
       </section>
@@ -681,6 +799,47 @@ export default function AdminUploadPage() {
               </button>
             </div>
 
+            {/* Bloco de Controle de Vigência */}
+            <div className="border-b border-brand-taupe bg-brand-yellow/10 px-5 py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex-1 max-w-xs">
+                  <label
+                    htmlFor="data-fim-geral-input"
+                    className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-brand-dark"
+                  >
+                    <Calendar
+                      className="h-3.5 w-3.5 text-brand-olive"
+                      aria-hidden="true"
+                    />
+                    Data de Validade Geral do Encarte
+                  </label>
+                  <input
+                    id="data-fim-geral-input"
+                    type="date"
+                    value={dataFim}
+                    onChange={(e) => handleGlobalDataFimChange(e.target.value)}
+                    className="w-full rounded-xl border border-brand-taupe bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  id="apply-global-validity-btn"
+                  type="button"
+                  onClick={applyGlobalValidityToAllItems}
+                  disabled={ofertas.length === 0 || !dataFim}
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-xs font-bold text-brand-dark shadow-xs transition-colors hover:bg-brand-gold disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                  Aplicar esta validade a todos os itens
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-brand-taupe">
+                Sugerida pela IA ao ler cabeçalho, rodapé e letras miúdas do
+                encarte. Edite aqui ou ajuste individualmente na coluna{" "}
+                <strong className="text-brand-dark">Validade</strong>.
+              </p>
+            </div>
+
             {ofertas.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-yellow/20 text-brand-dark">
@@ -705,7 +864,7 @@ export default function AdminUploadPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[780px] border-collapse text-left text-xs">
+                <table className="w-full min-w-[920px] border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-b border-brand-taupe bg-[#faf7ef] font-bold uppercase tracking-wider text-brand-dark">
                       <th className="px-3 py-3">Produto</th>
@@ -715,6 +874,7 @@ export default function AdminUploadPage() {
                       <th className="px-3 py-3">Normal (R$)</th>
                       <th className="px-3 py-3">Oferta (R$)</th>
                       <th className="px-3 py-3 text-center">Clube</th>
+                      <th className="px-3 py-3">Validade</th>
                       <th className="px-3 py-3 text-center">Ação</th>
                     </tr>
                   </thead>
@@ -869,6 +1029,26 @@ export default function AdminUploadPage() {
                               )}
                               {row.is_clube ? "Clube" : "Comum"}
                             </button>
+                          </td>
+
+                          <td className="px-2.5 py-2.5">
+                            <input
+                              type="date"
+                              value={row.data_fim}
+                              onChange={(e) =>
+                                updateOfferField(
+                                  row.localId,
+                                  "data_fim",
+                                  e.target.value
+                                )
+                              }
+                              aria-label={`Validade de ${row.produto_nome || "oferta"}`}
+                              className={`w-36 rounded-lg border bg-white px-2 py-1.5 text-xs font-medium text-brand-dark focus:ring-1 focus:outline-none ${
+                                !row.data_fim
+                                  ? "border-red-500 focus:border-red-600 focus:ring-red-300"
+                                  : "border-brand-taupe focus:border-brand-gold focus:ring-brand-yellow"
+                              }`}
+                            />
                           </td>
 
                           <td className="px-2.5 py-2.5 text-center">

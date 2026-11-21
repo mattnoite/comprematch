@@ -64,9 +64,13 @@ export interface ExtractedOffer {
   preco_normal: number;
   preco_oferta: number;
   is_clube: boolean;
+  data_fim: string;
 }
 
 export interface ExtractApiResponse {
+  mercado_sugerido_id: string | null;
+  mercado_nome_detectado: string | null;
+  data_inicio_sugerida: string;
   data_fim_sugerida: string;
   ofertas: ExtractedOffer[];
 }

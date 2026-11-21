@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   OFERTA_CATEGORIAS,
   type ExtractApiResponse,
@@ -16,6 +16,52 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
+
+const GEMINI_MODEL_CANDIDATES: ReadonlyArray<{
+  model: string;
+  apiVersion: "v1" | "v1beta";
+}> = [
+  { model: "gemini-3.8-flash", apiVersion: "v1" },
+  { model: "gemini-3.8-flash", apiVersion: "v1beta" },
+  { model: "gemini-flash-latest", apiVersion: "v1beta" },
+  { model: "gemini-flash-lite-latest", apiVersion: "v1beta" },
+];
+
+async function generateWithGeminiFallback(
+  genAI: GoogleGenerativeAI,
+  parts: Parameters<ReturnType<GoogleGenerativeAI["getGenerativeModel"]>["generateContent"]>[0],
+  generationConfig: { responseMimeType: string; temperature: number }
+): Promise<string> {
+  let lastError: unknown;
+
+  for (const candidate of GEMINI_MODEL_CANDIDATES) {
+    try {
+      const model = genAI.getGenerativeModel(
+        {
+          model: candidate.model,
+          generationConfig,
+        },
+        { apiVersion: candidate.apiVersion }
+      );
+      const result = await model.generateContent(parts);
+      return result.response.text();
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `Falha com ${candidate.model} (${candidate.apiVersion}), tentando próximo fallback:`,
+        err
+      );
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Nenhum modelo Gemini disponível respondeu com sucesso.");
+}
+
+function getTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function getDefaultEndDate(): string {
   const date = new Date();
@@ -50,17 +96,80 @@ function normalizeCategory(value: unknown): string {
   return matched ?? (trimmed || "Mercearia");
 }
 
-function normalizeDate(value: unknown): string {
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
-    return value.trim();
-  }
-  return getDefaultEndDate();
+function isValidIsoDate(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [y, m, d] = iso.split("-").map(Number);
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+  return (
+    parsed.getUTCFullYear() === y &&
+    parsed.getUTCMonth() === m - 1 &&
+    parsed.getUTCDate() === d
+  );
 }
 
-function sanitizeExtractedPayload(raw: unknown): ExtractApiResponse {
+function normalizeDate(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+
+  if (isValidIsoDate(trimmed)) {
+    return trimmed;
+  }
+
+  // Fallback defensivo caso a IA retorne DD/MM/AAAA ou DD/MM
+  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (brMatch) {
+    const day = brMatch[1].padStart(2, "0");
+    const month = brMatch[2].padStart(2, "0");
+    const rawYear = brMatch[3];
+    const currentYear = String(new Date().getFullYear());
+    const year = !rawYear
+      ? currentYear
+      : rawYear.length === 2
+        ? `20${rawYear}`
+        : rawYear;
+    const candidate = `${year}-${month}-${day}`;
+    if (isValidIsoDate(candidate)) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+}
+
+function sanitizeExtractedPayload(
+  raw: unknown,
+  validMercadoIds: Set<string>
+): ExtractApiResponse {
   const obj =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const rawOffers = Array.isArray(obj.ofertas) ? obj.ofertas : [];
+
+  const rawMercadoId =
+    typeof obj.mercado_sugerido_id === "string"
+      ? obj.mercado_sugerido_id.trim()
+      : "";
+  const mercadoSugeridoId =
+    rawMercadoId &&
+    rawMercadoId.toLowerCase() !== "null" &&
+    validMercadoIds.has(rawMercadoId)
+      ? rawMercadoId
+      : null;
+
+  const rawMercadoNome =
+    typeof obj.mercado_nome_detectado === "string"
+      ? obj.mercado_nome_detectado.trim()
+      : "";
+  const mercadoNomeDetectado =
+    rawMercadoNome && rawMercadoNome.toLowerCase() !== "null"
+      ? rawMercadoNome
+      : null;
+
+  const defaultStart = getTodayIso();
+  const defaultEnd = getDefaultEndDate();
+  const dataFimSugerida = normalizeDate(obj.data_fim_sugerida, defaultEnd);
+  const rawStart = normalizeDate(obj.data_inicio_sugerida, defaultStart);
+  const dataInicioSugerida =
+    rawStart <= dataFimSugerida ? rawStart : dataFimSugerida;
 
   const ofertas: ExtractedOffer[] = rawOffers
     .filter((item): item is Record<string, unknown> =>
@@ -80,21 +189,35 @@ function sanitizeExtractedPayload(raw: unknown): ExtractApiResponse {
         preco_normal: precoNormal,
         preco_oferta: precoOferta,
         is_clube: Boolean(item.is_clube),
+        data_fim: normalizeDate(item.data_fim, dataFimSugerida),
       };
     })
     .filter((item) => item.produto_nome.length > 0);
 
   return {
-    data_fim_sugerida: normalizeDate(obj.data_fim_sugerida),
+    mercado_sugerido_id: mercadoSugeridoId,
+    mercado_nome_detectado: mercadoNomeDetectado,
+    data_inicio_sugerida: dataInicioSugerida,
+    data_fim_sugerida: dataFimSugerida,
     ofertas,
   };
 }
 
-async function authorizeStaffRequest(request: NextRequest): Promise<{
-  ok: boolean;
-  status: number;
-  error?: string;
-}> {
+type StaffAuthResult =
+  | {
+      ok: true;
+      status: 200;
+      supabase: SupabaseClient;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+    };
+
+async function authorizeStaffRequest(
+  request: NextRequest
+): Promise<StaffAuthResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -163,7 +286,7 @@ async function authorizeStaffRequest(request: NextRequest): Promise<{
     };
   }
 
-  return { ok: true, status: 200 };
+  return { ok: true, status: 200, supabase };
 }
 
 export async function POST(request: NextRequest) {
@@ -189,14 +312,6 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file");
-    const mercadoId = formData.get("mercado_id");
-
-    if (!mercadoId || typeof mercadoId !== "string" || !mercadoId.trim()) {
-      return NextResponse.json(
-        { error: "Selecione o mercado emissor antes de extrair." },
-        { status: 400 }
-      );
-    }
 
     if (!(file instanceof File) || file.size === 0) {
       return NextResponse.json(
@@ -224,21 +339,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { data: mercadosData, error: mercadosError } = await authCheck.supabase
+      .from("mercados")
+      .select("id, nome_rede, unidade")
+      .order("nome_rede", { ascending: true });
+
+    if (mercadosError) {
+      console.warn(
+        "Não foi possível consultar a lista de mercados no Supabase:",
+        mercadosError.message
+      );
+    }
+
+    const mercadosCadastrados = Array.isArray(mercadosData)
+      ? (mercadosData as Array<{ id: string; nome_rede: string; unidade: string }>)
+      : [];
+    const validMercadoIds = new Set(mercadosCadastrados.map((m) => m.id));
+
+    const mercadosPromptList =
+      mercadosCadastrados.length > 0
+        ? mercadosCadastrados
+            .map(
+              (m) =>
+                `- id: "${m.id}" | nome_rede: "${m.nome_rede}" | unidade: "${m.unidade}"`
+            )
+            .join("\n")
+        : "(Nenhum mercado cadastrado no momento)";
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const base64Data = buffer.toString("base64");
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = getTodayIso();
+    const currentYear = new Date().getFullYear();
+    const defaultEndIso = getDefaultEndDate();
 
     const prompt = `Você é um especialista em OCR e estruturação de encartes de supermercados brasileiros para o aplicativo CompreMatch.
-Analise cuidadosamente a imagem/PDF deste encarte promocional (mercado_id: ${mercadoId}) e extraia TODAS as ofertas visíveis.
+Analise cuidadosamente a imagem/PDF deste encarte promocional e extraia TODAS as ofertas visíveis, a vigência e a identificação do supermercado emissor.
 
-Data atual de referência: ${todayIso}.
+Data atual de referência: ${todayIso} (ano corrente: ${currentYear}).
+
+Identificação do supermercado emissor:
+Identifique nas imagens o logotipo, nome da rede ou dados da filial (rodapé/cabeçalho). Compare com a lista de mercados cadastrados a seguir e retorne o ID correspondente da loja mais compatível. Se não houver correspondência exata, retorne null.
+
+Lista de mercados cadastrados:
+${mercadosPromptList}
 
 Regras estritas de extração:
 1. Retorne EXCLUSIVAMENTE um JSON válido seguindo exatamente o schema especificado.
-2. Em "data_fim_sugerida", informe a data final da promoção encontrada no encarte no formato "YYYY-MM-DD". Caso não esteja visível no encarte, sugira a data atual + 5 dias.
-3. Para cada oferta:
+2. Em "mercado_sugerido_id", retorne o UUID exato ("id") do mercado mais compatível da lista acima ou null se não houver correspondência confiável. Em "mercado_nome_detectado", informe o nome da rede/loja detectado na imagem (ou null se ilegível).
+3. INSPECIONE ATIVAMENTE o cabeçalho, o rodapé, selos, faixas e letras miúdas de todo o encarte em busca de expressões de vigência/validade (ex.: "Ofertas válidas de DD/MM até DD/MM/AAAA", "Válido até DD/MM", "Preços válidos de...", "Promoção válida de ... a ...").
+   - Converta a data inicial para "data_inicio_sugerida" e a data final para "data_fim_sugerida" no formato ISO "YYYY-MM-DD".
+   - Se o ano for omitido no impresso (ex.: "20/11" ou "de 18/11 a 25/11"), assuma o ano corrente (${currentYear}).
+   - Caso não consiga identificar nenhuma data de término no folheto, retorne exatamente "${defaultEndIso}" (5 dias à frente da data atual) em "data_fim_sugerida". Para "data_inicio_sugerida" não encontrada, use "${todayIso}".
+4. Para cada oferta:
    - "produto_nome": nome claro do produto sem repetir marca/peso se já estiverem nos campos próprios (ex: "Arroz Branco Tipo 1").
    - "marca": fabricante/marca (ex: "Camil", "Pilão", "OMO"). Se não houver marca (ex: hortifrúti), use "".
    - "peso_volume": embalagem/peso/volume (ex: "5kg", "1L", "500g", "350ml").
@@ -246,19 +400,24 @@ Regras estritas de extração:
    - "preco_normal": preço de referência ("De:") como número decimal. Se apenas o preço promocional estiver visível, repita o valor de preco_oferta.
    - "preco_oferta": preço promocional ("Por:") como número decimal.
    - "is_clube": true se a oferta exigir aplicativo/clube de fidelidade do mercado (ex: "Clube", "App", "Meu Carrefour", "Cliente Mais"), caso contrário false.
+   - "data_fim": data de validade específica deste item no formato "YYYY-MM-DD" caso o encarte indique prazo diferente para ele ou para sua seção (ex.: carnes ou hortifrúti com validade menor); caso contrário, repita o mesmo valor de "data_fim_sugerida".
 
 Schema JSON esperado:
 {
+  "mercado_sugerido_id": "UUID_DO_MERCADO_OU_NULL",
+  "mercado_nome_detectado": "Nome detectado na imagem (ex: Assaí Atacadista)",
+  "data_inicio_sugerida": "YYYY-MM-DD",
   "data_fim_sugerida": "YYYY-MM-DD",
   "ofertas": [
     {
       "produto_nome": "Nome do Produto",
       "marca": "Marca",
-      "peso_volume": "ex: 5kg, 1L, 500g",
+      "peso_volume": "ex: 5kg, 1L",
       "categoria": "Mercearia | Laticínios | Hortifrúti | Limpeza | Matinais | Bebidas",
       "preco_normal": 0.00,
       "preco_oferta": 0.00,
-      "is_clube": false
+      "is_clube": false,
+      "data_fim": "YYYY-MM-DD"
     }
   ]
 }`;
@@ -278,26 +437,11 @@ Schema JSON esperado:
       temperature: 0.1,
     };
 
-    let rawText = "";
-    try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        generationConfig,
-      });
-      const result = await model.generateContent(parts);
-      rawText = result.response.text();
-    } catch (primaryErr) {
-      console.warn(
-        "Falha com gemini-2.0-flash, tentando fallback gemini-1.5-flash:",
-        primaryErr
-      );
-      const fallbackModel = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
-        generationConfig,
-      });
-      const fallbackResult = await fallbackModel.generateContent(parts);
-      rawText = fallbackResult.response.text();
-    }
+    const rawText = await generateWithGeminiFallback(
+      genAI,
+      parts,
+      generationConfig
+    );
 
     const cleanedJson = rawText
       .replace(/^```json\s*/i, "")
@@ -306,7 +450,7 @@ Schema JSON esperado:
       .trim();
 
     const parsedJson: unknown = JSON.parse(cleanedJson);
-    const payload = sanitizeExtractedPayload(parsedJson);
+    const payload = sanitizeExtractedPayload(parsedJson, validMercadoIds);
 
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
