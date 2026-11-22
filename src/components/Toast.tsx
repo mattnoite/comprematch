@@ -28,7 +28,7 @@ export function Toast({ toast, onClose }: ToastProps) {
       className="fixed right-5 bottom-5 z-50 w-full max-w-sm"
     >
       <div
-        className={`flex items-start gap-3 rounded-xl border p-4 shadow-lg ${
+        className={`flex items-start gap-3 rounded-xl border p-4 ${
           isSuccess
             ? "border-brand-yellow bg-brand-dark text-white"
             : "border-red-500/40 bg-red-950 text-white"

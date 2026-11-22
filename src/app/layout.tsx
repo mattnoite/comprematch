@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#FAFAF9] text-brand-dark">
+      <body className="min-h-full flex flex-col bg-[#F8F7F4] text-brand-dark">
         <AuthProvider>
           <CartProvider>{children}</CartProvider>
         </AuthProvider>
