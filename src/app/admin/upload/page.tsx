@@ -28,6 +28,7 @@ import { Toast, type ToastMessage } from "@/components/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { CATEGORY_MAP, resolveCategoryKey } from "@/lib/categoryAssets";
+import { groupMercadosByChain } from "@/lib/chains";
 import {
   OFERTA_CATEGORIAS,
   type ExtractApiResponse,
@@ -73,7 +74,7 @@ const ACCEPTED_TYPES = new Set([
 
 const EXTRACTION_STAGES = [
   "Lendo layout e validade do encarte...",
-  "Identificando rede e unidade do supermercado...",
+  "Identificando rede do supermercado...",
   "Extraindo produtos, marcas e preços promocionais...",
   "Estruturando itens para conferência...",
 ] as const;
@@ -265,13 +266,18 @@ export default function AdminUploadPage() {
         payload.mercado_sugerido_id.trim()
           ? payload.mercado_sugerido_id.trim()
           : null;
-      const matchedMercado = suggestedId
-        ? mercados.find((m) => m.id === suggestedId) ?? null
+      const currentChains = groupMercadosByChain(mercados);
+      const matchedChain = suggestedId
+        ? currentChains.find(
+            (c) =>
+              c.representativeId === suggestedId ||
+              c.branches.some((b) => b.id === suggestedId)
+          ) ?? null
         : null;
 
       setMercadoNomeDetectado(payload.mercado_nome_detectado ?? null);
-      if (matchedMercado) {
-        setMercadoId(matchedMercado.id);
+      if (matchedChain) {
+        setMercadoId(matchedChain.representativeId);
         setMercadoDetectionStatus("matched");
       } else {
         setMercadoId("");
@@ -521,9 +527,16 @@ export default function AdminUploadPage() {
     }
   }
 
-  const selectedMercado = useMemo(
-    () => mercados.find((m) => m.id === mercadoId) ?? null,
-    [mercados, mercadoId]
+  const chainGroups = useMemo(() => groupMercadosByChain(mercados), [mercados]);
+
+  const selectedChain = useMemo(
+    () =>
+      chainGroups.find(
+        (c) =>
+          c.representativeId === mercadoId ||
+          c.branches.some((b) => b.id === mercadoId)
+      ) ?? null,
+    [chainGroups, mercadoId]
   );
 
   const isPdf = selectedFile?.type === "application/pdf";
@@ -597,7 +610,7 @@ export default function AdminUploadPage() {
               className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
             >
               <Store className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
-              Supermercado Emissor
+              Rede de Supermercado
             </label>
 
             {mercadoDetectionStatus === "matched" && (
@@ -610,7 +623,7 @@ export default function AdminUploadPage() {
             {mercadoDetectionStatus === "unmatched" && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
                 <AlertTriangle className="h-3 w-3 text-amber-600" aria-hidden="true" />
-                Selecione o mercado manualmente
+                Selecione a rede manualmente
               </span>
             )}
           </div>
@@ -630,26 +643,30 @@ export default function AdminUploadPage() {
             }`}
           >
             {loadingMercados ? (
-              <option value="">Carregando mercados...</option>
-            ) : mercados.length === 0 ? (
-              <option value="">Nenhum mercado cadastrado</option>
+              <option value="">Carregando redes...</option>
+            ) : chainGroups.length === 0 ? (
+              <option value="">Nenhuma rede cadastrada</option>
             ) : (
               <>
                 <option value="">
-                  Selecione um mercado (ou deixe a IA identificar)...
+                  Selecione uma rede (ou deixe a IA identificar)...
                 </option>
-                {mercados.map((mercado) => (
-                  <option key={mercado.id} value={mercado.id}>
-                    {mercado.nome_rede} • {mercado.unidade}
+                {chainGroups.map((chain) => (
+                  <option key={chain.key} value={chain.representativeId}>
+                    {chain.nome_rede}
                   </option>
                 ))}
               </>
             )}
           </select>
 
-          {selectedMercado ? (
+          {selectedChain ? (
             <p className="mt-1.5 text-xs text-brand-taupe">
-              {selectedMercado.endereco}
+              Abrangência: Grande São Paulo ({selectedChain.branches.length}{" "}
+              {selectedChain.branches.length === 1
+                ? "filial mapeada"
+                : "filiais mapeadas"}
+              )
               {mercadoDetectionStatus === "matched" && mercadoNomeDetectado
                 ? ` · Detectado na arte: "${mercadoNomeDetectado}"`
                 : ""}
@@ -657,13 +674,13 @@ export default function AdminUploadPage() {
           ) : mercadoDetectionStatus === "unmatched" ? (
             <p className="mt-1.5 text-xs font-medium text-brand-taupe">
               {mercadoNomeDetectado
-                ? `Identificado na arte: "${mercadoNomeDetectado}" (sem correspondência exata). Selecione o mercado manualmente.`
-                : "Não foi possível identificar o mercado no encarte. Selecione o mercado manualmente."}
+                ? `Identificado na arte: "${mercadoNomeDetectado}" (sem correspondência exata). Selecione a rede manualmente.`
+                : "Não foi possível identificar a rede no encarte. Selecione a rede manualmente."}
             </p>
           ) : (
             <p className="mt-1.5 text-xs text-brand-taupe">
               Opcional antes de extrair: a IA identifica automaticamente a rede
-              e a filial a partir do catálogo.
+              emissora do encarte para toda a Grande São Paulo.
             </p>
           )}
         </div>

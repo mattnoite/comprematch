@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import type { RouteMapOrigin, RouteMapStop } from "@/components/RouteMap";
 import { useCart, type CartItem } from "@/hooks/useCart";
+import { normalizeChainKey } from "@/lib/chains";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import type { Mercado } from "@/types/database";
 
 const MICRO_LABEL =
   "text-[10px] font-bold uppercase tracking-widest text-brand-taupe";
@@ -36,15 +38,26 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   ),
 });
 
+interface ChainBucket {
+  chainKey: string;
+  nome_rede: string;
+  items: CartItem[];
+  itemCount: number;
+  subtotal: number;
+}
+
 interface MarketBucket {
   mercado_id: string;
+  chainKey: string;
   nome_rede: string;
   unidade: string;
+  endereco?: string;
   lat: number;
   lng: number;
   items: CartItem[];
   itemCount: number;
   subtotal: number;
+  autoSelectedFromOrigin?: boolean;
 }
 
 interface OrderedStop extends MarketBucket {
@@ -58,6 +71,7 @@ interface OsrmRouteLeg {
 
 const EMPTY_COORDS: Array<[number, number]> = [];
 const EMPTY_LEGS: OsrmRouteLeg[] = [];
+const EMPTY_STOPS: RouteMapStop[] = [];
 
 interface OsrmRouteResponse {
   code?: string;
@@ -278,22 +292,66 @@ export default function RotasPage() {
     };
   }, [items]);
 
-  const marketBuckets = useMemo<MarketBucket[]>(() => {
-    const map = new Map<string, MarketBucket>();
+  const [mercados, setMercados] = useState<Mercado[]>([]);
+  const [loadingMercados, setLoadingMercados] = useState<boolean>(() =>
+    isSupabaseConfigured()
+  );
+  const [mercadosError, setMercadosError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    let active = true;
+    const supabase = getSupabaseClient();
+
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("mercados")
+          .select(
+            "id, nome_rede, unidade, endereco, latitude, longitude, created_at"
+          )
+          .order("nome_rede", { ascending: true });
+
+        if (!active) return;
+
+        if (error) {
+          setMercadosError(
+            "Não foi possível consultar as filiais na Grande São Paulo."
+          );
+          return;
+        }
+
+        setMercados((data as Mercado[]) ?? []);
+        setMercadosError(null);
+      } catch {
+        if (!active) return;
+        setMercadosError("Falha de conexão ao carregar filiais disponíveis.");
+      } finally {
+        if (active) setLoadingMercados(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const chainBuckets = useMemo<ChainBucket[]>(() => {
+    const map = new Map<string, ChainBucket>();
 
     for (const item of items) {
-      const existing = map.get(item.mercado_id);
+      const chainKey = normalizeChainKey(item.nome_rede);
+      if (!chainKey) continue;
+      const existing = map.get(chainKey);
       if (existing) {
         existing.items.push(item);
         existing.itemCount += item.quantity;
         existing.subtotal += item.preco_oferta * item.quantity;
       } else {
-        map.set(item.mercado_id, {
-          mercado_id: item.mercado_id,
-          nome_rede: item.nome_rede,
-          unidade: item.unidade,
-          lat: item.lat,
-          lng: item.lng,
+        map.set(chainKey, {
+          chainKey,
+          nome_rede: item.nome_rede.trim(),
           items: [item],
           itemCount: item.quantity,
           subtotal: item.preco_oferta * item.quantity,
@@ -304,25 +362,121 @@ export default function RotasPage() {
     return Array.from(map.values());
   }, [items]);
 
+  const { marketBuckets, missingChains } = useMemo(() => {
+    if (!origin || loadingMercados) {
+      return {
+        marketBuckets: [] as MarketBucket[],
+        missingChains: [] as string[],
+      };
+    }
+
+    const branchesByChain = new Map<string, Mercado[]>();
+    for (const branch of mercados) {
+      const lat = Number(branch.latitude);
+      const lng = Number(branch.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const key = normalizeChainKey(branch.nome_rede);
+      if (!key) continue;
+      const list = branchesByChain.get(key) ?? [];
+      list.push({ ...branch, latitude: lat, longitude: lng });
+      branchesByChain.set(key, list);
+    }
+
+    const resolved: MarketBucket[] = [];
+    const missing: string[] = [];
+
+    for (const bucket of chainBuckets) {
+      const candidates = branchesByChain.get(bucket.chainKey) ?? [];
+      if (candidates.length > 0) {
+        let bestBranch = candidates[0];
+        let bestDistance = haversineMeters(
+          origin.lat,
+          origin.lng,
+          bestBranch.latitude,
+          bestBranch.longitude
+        );
+
+        for (let i = 1; i < candidates.length; i++) {
+          const candidate = candidates[i];
+          const dist = haversineMeters(
+            origin.lat,
+            origin.lng,
+            candidate.latitude,
+            candidate.longitude
+          );
+          if (dist < bestDistance) {
+            bestDistance = dist;
+            bestBranch = candidate;
+          }
+        }
+
+        resolved.push({
+          mercado_id: bestBranch.id,
+          chainKey: bucket.chainKey,
+          nome_rede: bestBranch.nome_rede,
+          unidade: bestBranch.unidade,
+          endereco: bestBranch.endereco,
+          lat: bestBranch.latitude,
+          lng: bestBranch.longitude,
+          items: bucket.items,
+          itemCount: bucket.itemCount,
+          subtotal: bucket.subtotal,
+          autoSelectedFromOrigin: true,
+        });
+        continue;
+      }
+
+      const fallbackItem = bucket.items.find(
+        (it) =>
+          typeof it.lat === "number" &&
+          Number.isFinite(it.lat) &&
+          typeof it.lng === "number" &&
+          Number.isFinite(it.lng)
+      );
+
+      if (
+        fallbackItem &&
+        fallbackItem.lat !== undefined &&
+        fallbackItem.lng !== undefined
+      ) {
+        resolved.push({
+          mercado_id: fallbackItem.mercado_id ?? bucket.chainKey,
+          chainKey: bucket.chainKey,
+          nome_rede: bucket.nome_rede,
+          unidade: fallbackItem.unidade ?? "Unidade da rede",
+          lat: fallbackItem.lat,
+          lng: fallbackItem.lng,
+          items: bucket.items,
+          itemCount: bucket.itemCount,
+          subtotal: bucket.subtotal,
+          autoSelectedFromOrigin: false,
+        });
+      } else {
+        missing.push(bucket.nome_rede);
+      }
+    }
+
+    return { marketBuckets: resolved, missingChains: missing };
+  }, [origin, loadingMercados, mercados, chainBuckets]);
+
   const orderedStops = useMemo<OrderedStop[]>(
-    () => orderMarketsFromOrigin(marketBuckets, origin),
+    () => (origin ? orderMarketsFromOrigin(marketBuckets, origin) : []),
     [marketBuckets, origin]
   );
 
-  const mapStops = useMemo<RouteMapStop[]>(
-    () =>
-      orderedStops.map((stop) => ({
-        mercado_id: stop.mercado_id,
-        nome_rede: stop.nome_rede,
-        unidade: stop.unidade,
-        lat: stop.lat,
-        lng: stop.lng,
-        subtotal: stop.subtotal,
-        itemCount: stop.itemCount,
-        stopNumber: stop.stopNumber,
-      })),
-    [orderedStops]
-  );
+  const mapStops = useMemo<RouteMapStop[]>(() => {
+    if (orderedStops.length === 0) return EMPTY_STOPS;
+    return orderedStops.map((stop) => ({
+      mercado_id: stop.mercado_id,
+      nome_rede: stop.nome_rede,
+      unidade: stop.unidade,
+      lat: stop.lat,
+      lng: stop.lng,
+      subtotal: stop.subtotal,
+      itemCount: stop.itemCount,
+      stopNumber: stop.stopNumber,
+    }));
+  }, [orderedStops]);
 
   const totalFinalCompras = getCartTotal();
   const totalItemCount = getItemCount();
@@ -682,6 +836,27 @@ export default function RotasPage() {
                     <span>{originError}</span>
                   </div>
                 )}
+                {mercadosError && (
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs font-medium text-red-700"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{mercadosError}</span>
+                  </div>
+                )}
+                {missingChains.length > 0 && (
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-1.5 rounded-lg border border-brand-gold/50 bg-brand-yellow/10 px-2.5 py-2 text-xs font-medium text-brand-dark"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-gold" aria-hidden="true" />
+                    <span>
+                      Sem filiais georreferenciadas na Grande SP para:{" "}
+                      {missingChains.join(", ")}.
+                    </span>
+                  </div>
+                )}
                 {routeError && (
                   <div
                     role="alert"
@@ -709,53 +884,119 @@ export default function RotasPage() {
                   </p>
                 </li>
 
-                {orderedStops.map((stop, idx) => {
-                  const leg = routeLegs[idx];
-                  const isLast = idx === orderedStops.length - 1;
-                  return (
-                    <li
-                      key={stop.mercado_id}
-                      className={`relative flex gap-3 ${isLast ? "" : "pb-6"}`}
-                    >
-                      {!isLast && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute top-7 bottom-0 left-[13px] border-l-2 border-dotted border-[#333029]/35"
-                        />
-                      )}
-                      <span
-                        className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand-dark bg-[#F8F7F4] text-xs font-black text-brand-dark ${NUM}`}
+                {!origin ? (
+                  chainBuckets.map((chain, idx) => {
+                    const isLast = idx === chainBuckets.length - 1;
+                    return (
+                      <li
+                        key={chain.chainKey}
+                        className={`relative flex gap-3 ${isLast ? "" : "pb-6"}`}
                       >
-                        {stop.stopNumber}
-                      </span>
-                      <div className="min-w-0 flex-1 pt-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm text-brand-dark">
-                            <strong className="font-bold">
-                              Parada {stop.stopNumber}:
-                            </strong>{" "}
-                            {stop.nome_rede} • {stop.unidade}
-                          </p>
+                        {!isLast && (
                           <span
-                            className={`shrink-0 text-sm font-bold text-brand-dark ${NUM}`}
-                          >
-                            {formatBRL(stop.subtotal)}
-                          </span>
+                            aria-hidden="true"
+                            className="absolute top-7 bottom-0 left-[13px] border-l-2 border-dotted border-[#333029]/35"
+                          />
+                        )}
+                        <span
+                          className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-[#333029]/35 bg-[#F8F7F4] text-xs font-black text-brand-taupe ${NUM}`}
+                        >
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0 flex-1 pt-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm text-brand-dark">
+                              <strong className="font-bold">
+                                Parada {idx + 1}:
+                              </strong>{" "}
+                              {chain.nome_rede}
+                            </p>
+                            <span
+                              className={`shrink-0 text-sm font-bold text-brand-dark ${NUM}`}
+                            >
+                              {formatBRL(chain.subtotal)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-brand-taupe">
+                            <span className={NUM}>
+                              • {chain.itemCount}{" "}
+                              {chain.itemCount === 1 ? "item" : "itens"}
+                            </span>{" "}
+                            · filial mais próxima selecionada pela origem
+                          </p>
                         </div>
-                        <p className={`mt-0.5 text-xs text-brand-taupe ${NUM}`}>
-                          • {stop.itemCount}{" "}
-                          {stop.itemCount === 1 ? "item" : "itens"}
-                          {leg &&
-                            ` · ${formatDistanceKm(leg.distance)} · ${formatDuration(leg.duration)}`}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
+                      </li>
+                    );
+                  })
+                ) : loadingMercados ? (
+                  <li className="flex items-center gap-3 pb-2 text-xs font-medium text-brand-taupe">
+                    <Loader2
+                      className="h-4 w-4 animate-spin text-brand-gold"
+                      aria-hidden="true"
+                    />
+                    Localizando as filiais mais próximas da sua cesta…
+                  </li>
+                ) : (
+                  orderedStops.map((stop, idx) => {
+                    const leg = routeLegs[idx];
+                    const isLast = idx === orderedStops.length - 1;
+                    return (
+                      <li
+                        key={stop.mercado_id}
+                        className={`relative flex gap-3 ${isLast ? "" : "pb-6"}`}
+                      >
+                        {!isLast && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute top-7 bottom-0 left-[13px] border-l-2 border-dotted border-[#333029]/35"
+                          />
+                        )}
+                        <span
+                          className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand-dark bg-[#F8F7F4] text-xs font-black text-brand-dark ${NUM}`}
+                        >
+                          {stop.stopNumber}
+                        </span>
+                        <div className="min-w-0 flex-1 pt-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm text-brand-dark">
+                              <strong className="font-bold">
+                                Parada {stop.stopNumber}:
+                              </strong>{" "}
+                              {stop.nome_rede} • {stop.unidade}
+                            </p>
+                            <span
+                              className={`shrink-0 text-sm font-bold text-brand-dark ${NUM}`}
+                            >
+                              {formatBRL(stop.subtotal)}
+                            </span>
+                          </div>
+                          {stop.autoSelectedFromOrigin && (
+                            <p className="mt-0.5 text-[11px] font-semibold text-brand-olive">
+                              Filial mais próxima selecionada automaticamente
+                              {stop.endereco ? ` · ${stop.endereco}` : ""}
+                            </p>
+                          )}
+                          <p className={`mt-0.5 text-xs text-brand-taupe ${NUM}`}>
+                            • {stop.itemCount}{" "}
+                            {stop.itemCount === 1 ? "item" : "itens"}
+                            {leg &&
+                              ` · ${formatDistanceKm(leg.distance)} · ${formatDuration(leg.duration)}`}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
               </ol>
 
               {/* Exportar */}
               <div className="space-y-2">
+                {!origin && (
+                  <p className="rounded-xl border border-dashed border-[#333029]/20 bg-white/70 px-3.5 py-3 text-center text-xs text-brand-taupe">
+                    Informe seu ponto de partida acima para selecionar as filiais
+                    mais próximas e liberar a navegação no Google Maps e Waze.
+                  </p>
+                )}
                 {googleMapsUrl && (
                   <a
                     href={googleMapsUrl}
@@ -789,18 +1030,27 @@ export default function RotasPage() {
                 stops={mapStops}
                 routeCoordinates={routeCoordinates}
               />
-              {routeLoading && (
+              {origin && loadingMercados ? (
                 <div className="absolute top-3 left-3 z-[1000] rounded-lg bg-brand-dark px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-yellow">
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                    Traçando trajeto
+                    Buscando filiais próximas
                   </span>
                 </div>
+              ) : (
+                routeLoading && (
+                  <div className="absolute top-3 left-3 z-[1000] rounded-lg bg-brand-dark px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-yellow">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                      Traçando trajeto
+                    </span>
+                  </div>
+                )
               )}
               {!origin && (
                 <p className="mt-2 text-xs text-brand-taupe">
-                  Mercados da cesta já marcados no mapa. Defina o ponto de
-                  partida para traçar a rota completa.
+                  Defina seu ponto de partida para identificar as filiais mais
+                  próximas da sua cesta na Grande São Paulo e traçar a rota.
                 </p>
               )}
             </section>

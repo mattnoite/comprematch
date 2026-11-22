@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { normalizeChainKey, normalizeMatchText } from "@/lib/chains";
 
 const CART_STORAGE_KEY = "comprematch_cart_v1";
 const CART_EVENT_NAME = "comprematch-cart-change";
@@ -25,11 +26,11 @@ export interface CartOfferInput {
 }
 
 export interface CartMercadoInput {
-  mercado_id: string;
   nome_rede: string;
-  unidade: string;
-  lat: number;
-  lng: number;
+  mercado_id?: string;
+  unidade?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface CartItem extends CartOfferInput, CartMercadoInput {
@@ -56,6 +57,11 @@ let cachedItems: CartItem[] = EMPTY_CART;
 function isValidCartItem(value: unknown): value is CartItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
+  const validOptionalString = (val: unknown) =>
+    val === undefined || typeof val === "string";
+  const validOptionalCoord = (val: unknown) =>
+    val === undefined || (typeof val === "number" && Number.isFinite(val));
+
   return (
     typeof item.id === "string" &&
     item.id.length > 0 &&
@@ -64,12 +70,12 @@ function isValidCartItem(value: unknown): value is CartItem {
     Number.isFinite(item.preco_oferta) &&
     typeof item.categoria === "string" &&
     typeof item.is_clube === "boolean" &&
-    typeof item.mercado_id === "string" &&
-    item.mercado_id.length > 0 &&
     typeof item.nome_rede === "string" &&
-    typeof item.unidade === "string" &&
-    typeof item.lat === "number" &&
-    typeof item.lng === "number" &&
+    item.nome_rede.trim().length > 0 &&
+    validOptionalString(item.mercado_id) &&
+    validOptionalString(item.unidade) &&
+    validOptionalCoord(item.lat) &&
+    validOptionalCoord(item.lng) &&
     typeof item.quantity === "number" &&
     Number.isFinite(item.quantity) &&
     item.quantity > 0
@@ -156,7 +162,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addItem = useCallback(
     (oferta: CartOfferInput, mercado: CartMercadoInput) => {
       const current = getCartSnapshot();
-      const existingIndex = current.findIndex((item) => item.id === oferta.id);
+      const targetChain = normalizeChainKey(mercado.nome_rede);
+      const targetName = normalizeMatchText(oferta.produto_nome);
+      const targetBrand = normalizeMatchText(oferta.marca);
+      const targetWeight = normalizeMatchText(oferta.peso_volume);
+      const targetPrice = Number(oferta.preco_oferta);
+      const targetClube = Boolean(oferta.is_clube);
+
+      const existingIndex = current.findIndex(
+        (item) =>
+          item.id === oferta.id ||
+          (normalizeChainKey(item.nome_rede) === targetChain &&
+            normalizeMatchText(item.produto_nome) === targetName &&
+            normalizeMatchText(item.marca) === targetBrand &&
+            normalizeMatchText(item.peso_volume) === targetWeight &&
+            Number(item.preco_oferta) === targetPrice &&
+            Boolean(item.is_clube) === targetClube)
+      );
 
       if (existingIndex >= 0) {
         const next = current.map((item, idx) =>
@@ -168,27 +190,35 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const precoOferta = Number(oferta.preco_oferta);
       const precoNormalRaw =
         oferta.preco_normal !== undefined &&
         Number.isFinite(Number(oferta.preco_normal))
           ? Number(oferta.preco_normal)
-          : precoOferta;
+          : targetPrice;
+
+      const parsedLat =
+        mercado.lat !== undefined ? Number(mercado.lat) : undefined;
+      const parsedLng =
+        mercado.lng !== undefined ? Number(mercado.lng) : undefined;
 
       const nextItem: CartItem = {
         id: oferta.id,
         produto_nome: oferta.produto_nome,
         marca: oferta.marca ?? null,
         peso_volume: oferta.peso_volume ?? null,
-        preco_normal: precoNormalRaw >= precoOferta ? precoNormalRaw : precoOferta,
-        preco_oferta: precoOferta,
+        preco_normal: precoNormalRaw >= targetPrice ? precoNormalRaw : targetPrice,
+        preco_oferta: targetPrice,
         categoria: oferta.categoria,
-        is_clube: Boolean(oferta.is_clube),
-        mercado_id: mercado.mercado_id,
-        nome_rede: mercado.nome_rede,
-        unidade: mercado.unidade,
-        lat: Number(mercado.lat),
-        lng: Number(mercado.lng),
+        is_clube: targetClube,
+        nome_rede: mercado.nome_rede.trim(),
+        ...(mercado.mercado_id ? { mercado_id: mercado.mercado_id } : {}),
+        ...(mercado.unidade !== undefined ? { unidade: mercado.unidade } : {}),
+        ...(parsedLat !== undefined && Number.isFinite(parsedLat)
+          ? { lat: parsedLat }
+          : {}),
+        ...(parsedLng !== undefined && Number.isFinite(parsedLng)
+          ? { lng: parsedLng }
+          : {}),
         quantity: 1,
       };
 

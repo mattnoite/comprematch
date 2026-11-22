@@ -19,6 +19,11 @@ import { Toast, type ToastMessage } from "@/components/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
 import { getProductAsset, resolveCategoryKey } from "@/lib/categoryAssets";
+import {
+  groupMercadosByChain,
+  normalizeChainKey,
+  normalizeMatchText,
+} from "@/lib/chains";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Mercado, Oferta } from "@/types/database";
 
@@ -86,12 +91,35 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+function buildProductChainKey(params: {
+  nome_rede: string;
+  produto_nome: string;
+  marca: string | null;
+  peso_volume: string | null;
+  preco_oferta: number;
+  is_clube: boolean;
+}): string {
+  return [
+    normalizeChainKey(params.nome_rede),
+    normalizeMatchText(params.produto_nome),
+    normalizeMatchText(params.marca),
+    normalizeMatchText(params.peso_volume),
+    Number(params.preco_oferta).toFixed(2),
+    params.is_clube ? "1" : "0",
+  ].join("|");
+}
+
+interface ChainOption {
+  key: string;
+  nome_rede: string;
+}
+
 export default function VitrinePublicaPage() {
   const { isAuthorizedStaff, loading: authLoading } = useAuth();
   const { items: cartItems, addItem, getItemCount } = useCart();
 
   const [ofertas, setOfertas] = useState<OfertaWithMercado[]>([]);
-  const [mercados, setMercados] = useState<MercadoJoin[]>([]);
+  const [chains, setChains] = useState<ChainOption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -102,7 +130,7 @@ export default function VitrinePublicaPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
-  const [selectedMercadoId, setSelectedMercadoId] = useState<string>("todos");
+  const [selectedRede, setSelectedRede] = useState<string>("todos");
 
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -260,8 +288,49 @@ export default function VitrinePublicaPage() {
           ];
         });
 
-        setMercados(mercadosList);
-        setOfertas(normalizedOffers);
+        // Deduplica ofertas idênticas cadastradas em filiais diferentes da mesma rede na Grande SP
+        const dedupedMap = new Map<string, OfertaWithMercado>();
+        for (const offer of normalizedOffers) {
+          const key = buildProductChainKey({
+            nome_rede: offer.mercado.nome_rede,
+            produto_nome: offer.produto_nome,
+            marca: offer.marca,
+            peso_volume: offer.peso_volume,
+            preco_oferta: offer.preco_oferta,
+            is_clube: offer.is_clube,
+          });
+          const existing = dedupedMap.get(key);
+          if (
+            !existing ||
+            offer.data_fim > existing.data_fim ||
+            (offer.data_fim === existing.data_fim &&
+              offer.created_at > existing.created_at)
+          ) {
+            dedupedMap.set(key, offer);
+          }
+        }
+        const dedupedOffers = Array.from(dedupedMap.values());
+
+        const chainMap = new Map<string, ChainOption>();
+        for (const group of groupMercadosByChain(mercadosList)) {
+          chainMap.set(group.key, {
+            key: group.key,
+            nome_rede: group.nome_rede,
+          });
+        }
+        for (const offer of dedupedOffers) {
+          const cleanName = offer.mercado.nome_rede.trim().replace(/\s+/g, " ");
+          const key = normalizeChainKey(cleanName);
+          if (key && !chainMap.has(key)) {
+            chainMap.set(key, { key, nome_rede: cleanName });
+          }
+        }
+        const uniqueChains = Array.from(chainMap.values()).sort((a, b) =>
+          a.nome_rede.localeCompare(b.nome_rede, "pt-BR")
+        );
+
+        setChains(uniqueChains);
+        setOfertas(dedupedOffers);
       } catch (err) {
         if (!mounted) return;
         setErrorMessage(
@@ -280,10 +349,22 @@ export default function VitrinePublicaPage() {
     };
   }, []);
 
-  const cartQtyByOfferId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of cartItems) map.set(item.id, item.quantity);
-    return map;
+  const cartQtyLookup = useMemo(() => {
+    const byId = new Map<string, number>();
+    const byProductKey = new Map<string, number>();
+    for (const item of cartItems) {
+      byId.set(item.id, item.quantity);
+      const key = buildProductChainKey({
+        nome_rede: item.nome_rede,
+        produto_nome: item.produto_nome,
+        marca: item.marca,
+        peso_volume: item.peso_volume,
+        preco_oferta: item.preco_oferta,
+        is_clube: item.is_clube,
+      });
+      byProductKey.set(key, (byProductKey.get(key) ?? 0) + item.quantity);
+    }
+    return { byId, byProductKey };
   }, [cartItems]);
 
   const selectedCategoryFilter = useMemo(
@@ -303,8 +384,8 @@ export default function VitrinePublicaPage() {
         }
       }
       if (
-        selectedMercadoId !== "todos" &&
-        offer.mercado_id !== selectedMercadoId
+        selectedRede !== "todos" &&
+        normalizeChainKey(offer.mercado.nome_rede) !== selectedRede
       ) {
         return false;
       }
@@ -316,17 +397,17 @@ export default function VitrinePublicaPage() {
       }
       return true;
     });
-  }, [ofertas, searchTerm, selectedCategoryFilter, selectedMercadoId]);
+  }, [ofertas, searchTerm, selectedCategoryFilter, selectedRede]);
 
   const hasActiveFilters =
     searchTerm.trim().length > 0 ||
     selectedCategory !== "Todas" ||
-    selectedMercadoId !== "todos";
+    selectedRede !== "todos";
 
   function clearFilters() {
     setSearchTerm("");
     setSelectedCategory("Todas");
-    setSelectedMercadoId("todos");
+    setSelectedRede("todos");
   }
 
   function handleAddToCart(offer: OfertaWithMercado) {
@@ -342,11 +423,7 @@ export default function VitrinePublicaPage() {
         is_clube: offer.is_clube,
       },
       {
-        mercado_id: offer.mercado.id,
         nome_rede: offer.mercado.nome_rede,
-        unidade: offer.mercado.unidade,
-        lat: offer.mercado.latitude,
-        lng: offer.mercado.longitude,
       }
     );
 
@@ -687,14 +764,14 @@ export default function VitrinePublicaPage() {
                 />
                 <select
                   id="vitrine-market-select"
-                  value={selectedMercadoId}
-                  onChange={(e) => setSelectedMercadoId(e.target.value)}
+                  value={selectedRede}
+                  onChange={(e) => setSelectedRede(e.target.value)}
                   className="w-full rounded-lg border border-[#333029]/10 bg-white py-2.5 pr-3 pl-9 text-sm text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
                 >
                   <option value="todos">Todos os mercados</option>
-                  {mercados.map((mercado) => (
-                    <option key={mercado.id} value={mercado.id}>
-                      {mercado.nome_rede} • {mercado.unidade}
+                  {chains.map((chain) => (
+                    <option key={chain.key} value={chain.key}>
+                      {chain.nome_rede}
                     </option>
                   ))}
                 </select>
@@ -780,9 +857,22 @@ export default function VitrinePublicaPage() {
                       preco_oferta: offer.preco_oferta,
                       is_clube: offer.is_clube,
                       data_fim: offer.data_fim,
-                      mercado_nome: `${offer.mercado.nome_rede} • ${offer.mercado.unidade}`,
+                      mercado_nome: offer.mercado.nome_rede,
                     }}
-                    qtyInCart={cartQtyByOfferId.get(offer.id) ?? 0}
+                    qtyInCart={
+                      cartQtyLookup.byId.get(offer.id) ??
+                      cartQtyLookup.byProductKey.get(
+                        buildProductChainKey({
+                          nome_rede: offer.mercado.nome_rede,
+                          produto_nome: offer.produto_nome,
+                          marca: offer.marca,
+                          peso_volume: offer.peso_volume,
+                          preco_oferta: offer.preco_oferta,
+                          is_clube: offer.is_clube,
+                        })
+                      ) ??
+                      0
+                    }
                     onAdd={() => handleAddToCart(offer)}
                   />
                 ))}

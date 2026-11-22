@@ -6,6 +6,7 @@ import { Minus, Plus, ReceiptText, Trash2, X } from "lucide-react";
 import { useCart, type CartItem } from "@/hooks/useCart";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { getProductAsset } from "@/lib/categoryAssets";
+import { normalizeChainKey } from "@/lib/chains";
 
 interface CartDrawerProps {
   id: string;
@@ -14,9 +15,8 @@ interface CartDrawerProps {
 }
 
 interface MarketGroup {
-  mercado_id: string;
+  chainKey: string;
   nome_rede: string;
-  unidade: string;
   items: CartItem[];
   unitCount: number;
   subtotal: number;
@@ -94,16 +94,17 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
     const map = new Map<string, MarketGroup>();
 
     for (const item of items) {
-      const existing = map.get(item.mercado_id);
+      const chainKey = normalizeChainKey(item.nome_rede);
+      if (!chainKey) continue;
+      const existing = map.get(chainKey);
       if (existing) {
         existing.items.push(item);
         existing.unitCount += item.quantity;
         existing.subtotal += item.preco_oferta * item.quantity;
       } else {
-        map.set(item.mercado_id, {
-          mercado_id: item.mercado_id,
-          nome_rede: item.nome_rede,
-          unidade: item.unidade,
+        map.set(chainKey, {
+          chainKey,
+          nome_rede: item.nome_rede.trim(),
           items: [item],
           unitCount: item.quantity,
           subtotal: item.preco_oferta * item.quantity,
@@ -211,7 +212,7 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
           ) : (
             groupedByMarket.map((group, idx) => (
               <section
-                key={group.mercado_id}
+                key={group.chainKey}
                 aria-label={`Parada ${idx + 1}: ${group.nome_rede}`}
                 className="rounded-2xl border border-[#333029]/10 bg-white p-3"
               >
@@ -226,7 +227,9 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
                     {group.unitCount}
                   </span>
                 </div>
-                <p className="text-[11px] text-brand-taupe">{group.unidade}</p>
+                <p className="mt-0.5 text-[11px] text-brand-taupe">
+                  Filial mais próxima selecionada ao traçar a rota
+                </p>
 
                 <ul className="mt-2 space-y-2.5">
                   {group.items.map((item) => (

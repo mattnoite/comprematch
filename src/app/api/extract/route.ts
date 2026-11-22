@@ -7,6 +7,7 @@ import {
   type ExtractedOffer,
 } from "@/types/database";
 import { resolveCategoryKey } from "@/lib/categoryAssets";
+import { groupMercadosByChain, normalizeChainKey } from "@/lib/chains";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -356,17 +357,24 @@ export async function POST(request: NextRequest) {
     const mercadosCadastrados = Array.isArray(mercadosData)
       ? (mercadosData as Array<{ id: string; nome_rede: string; unidade: string }>)
       : [];
+    const uniqueChains = groupMercadosByChain(mercadosCadastrados);
     const validMercadoIds = new Set(mercadosCadastrados.map((m) => m.id));
+    const idToRepresentativeId = new Map<string, string>();
+    for (const chain of uniqueChains) {
+      for (const branch of chain.branches) {
+        idToRepresentativeId.set(branch.id, chain.representativeId);
+      }
+    }
 
     const mercadosPromptList =
-      mercadosCadastrados.length > 0
-        ? mercadosCadastrados
+      uniqueChains.length > 0
+        ? uniqueChains
             .map(
-              (m) =>
-                `- id: "${m.id}" | nome_rede: "${m.nome_rede}" | unidade: "${m.unidade}"`
+              (c) =>
+                `- id: "${c.representativeId}" | nome_rede: "${c.nome_rede}" (Abrangência: Grande São Paulo)`
             )
             .join("\n")
-        : "(Nenhum mercado cadastrado no momento)";
+        : "(Nenhuma rede cadastrada no momento)";
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const base64Data = buffer.toString("base64");
@@ -377,19 +385,19 @@ export async function POST(request: NextRequest) {
     const defaultEndIso = getDefaultEndDate();
 
     const prompt = `Você é um especialista em OCR e estruturação de encartes de supermercados brasileiros para o aplicativo CompreMatch.
-Analise cuidadosamente a imagem/PDF deste encarte promocional e extraia TODAS as ofertas visíveis, a vigência e a identificação do supermercado emissor.
+Analise cuidadosamente a imagem/PDF deste encarte promocional e extraia TODAS as ofertas visíveis, a vigência e a identificação da rede de supermercados emissora.
 
 Data atual de referência: ${todayIso} (ano corrente: ${currentYear}).
 
-Identificação do supermercado emissor:
-Identifique nas imagens o logotipo, nome da rede ou dados da filial (rodapé/cabeçalho). Compare com a lista de mercados cadastrados a seguir e retorne o ID correspondente da loja mais compatível. Se não houver correspondência exata, retorne null.
+Identificação da rede de supermercado emissora:
+As ofertas de encartes valem para toda a Grande São Paulo. Identifique nas imagens o logotipo ou nome da rede emissora (sem distinguir por bairro ou unidade). Compare com a lista de redes cadastradas a seguir e retorne o ID correspondente da rede mais compatível. Se não houver correspondência exata, retorne null.
 
-Lista de mercados cadastrados:
+Lista de redes cadastradas:
 ${mercadosPromptList}
 
 Regras estritas de extração:
 1. Retorne EXCLUSIVAMENTE um JSON válido seguindo exatamente o schema especificado.
-2. Em "mercado_sugerido_id", retorne o UUID exato ("id") do mercado mais compatível da lista acima ou null se não houver correspondência confiável. Em "mercado_nome_detectado", informe o nome da rede/loja detectado na imagem (ou null se ilegível).
+2. Em "mercado_sugerido_id", retorne o UUID exato ("id") da rede mais compatível da lista acima ou null se não houver correspondência confiável. Em "mercado_nome_detectado", informe o nome da rede detectado na imagem (ou null se ilegível).
 3. INSPECIONE ATIVAMENTE o cabeçalho, o rodapé, selos, faixas e letras miúdas de todo o encarte em busca de expressões de vigência/validade (ex.: "Ofertas válidas de DD/MM até DD/MM/AAAA", "Válido até DD/MM", "Preços válidos de...", "Promoção válida de ... a ...").
    - Converta a data inicial para "data_inicio_sugerida" e a data final para "data_fim_sugerida" no formato ISO "YYYY-MM-DD".
    - Se o ano for omitido no impresso (ex.: "20/11" ou "de 18/11 a 25/11"), assuma o ano corrente (${currentYear}).
@@ -453,6 +461,26 @@ Schema JSON esperado:
 
     const parsedJson: unknown = JSON.parse(cleanedJson);
     const payload = sanitizeExtractedPayload(parsedJson, validMercadoIds);
+
+    if (payload.mercado_sugerido_id) {
+      payload.mercado_sugerido_id =
+        idToRepresentativeId.get(payload.mercado_sugerido_id) ??
+        payload.mercado_sugerido_id;
+    } else if (payload.mercado_nome_detectado) {
+      const detectedKey = normalizeChainKey(payload.mercado_nome_detectado);
+      if (detectedKey.length >= 3) {
+        const exactChain = uniqueChains.find((c) => c.key === detectedKey);
+        const partialMatches = uniqueChains
+          .filter(
+            (c) => detectedKey.includes(c.key) || c.key.includes(detectedKey)
+          )
+          .sort((a, b) => b.key.length - a.key.length);
+        const fallbackChain = exactChain ?? partialMatches[0] ?? null;
+        if (fallbackChain) {
+          payload.mercado_sugerido_id = fallbackChain.representativeId;
+        }
+      }
+    }
 
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
