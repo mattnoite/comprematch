@@ -6,6 +6,7 @@ import {
   type ExtractApiResponse,
   type ExtractedOffer,
 } from "@/types/database";
+import { resolveCategoryKey } from "@/lib/categoryAssets";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -88,12 +89,13 @@ function normalizePrice(value: unknown): number {
 }
 
 function normalizeCategory(value: unknown): string {
-  if (typeof value !== "string") return "Mercearia";
-  const trimmed = value.trim();
-  const matched = OFERTA_CATEGORIAS.find(
-    (cat) => cat.toLowerCase() === trimmed.toLowerCase()
-  );
-  return matched ?? (trimmed || "Mercearia");
+  if (typeof value !== "string") return "mercearia";
+  const resolved = resolveCategoryKey(value);
+  return OFERTA_CATEGORIAS.includes(
+    resolved as (typeof OFERTA_CATEGORIAS)[number]
+  )
+    ? resolved
+    : "mercearia";
 }
 
 function isValidIsoDate(iso: string): boolean {
@@ -396,7 +398,7 @@ Regras estritas de extração:
    - "produto_nome": nome claro do produto sem repetir marca/peso se já estiverem nos campos próprios (ex: "Arroz Branco Tipo 1").
    - "marca": fabricante/marca (ex: "Camil", "Pilão", "OMO"). Se não houver marca (ex: hortifrúti), use "".
    - "peso_volume": embalagem/peso/volume (ex: "5kg", "1L", "500g", "350ml").
-   - "categoria": escolha exatamente uma destas opções: "Mercearia", "Laticínios", "Hortifrúti", "Limpeza", "Matinais", "Bebidas" (ou "Higiene", "Açougue", "Padaria", "Outros" apenas se nenhuma das principais se aplicar).
+   - "categoria": escolha RIGOROSAMENTE uma das chaves do enum a seguir: ${JSON.stringify(OFERTA_CATEGORIAS)}.
    - "preco_normal": preço de referência ("De:") como número decimal. Se apenas o preço promocional estiver visível, repita o valor de preco_oferta.
    - "preco_oferta": preço promocional ("Por:") como número decimal.
    - "is_clube": true se a oferta exigir aplicativo/clube de fidelidade do mercado (ex: "Clube", "App", "Meu Carrefour", "Cliente Mais"), caso contrário false.
@@ -413,7 +415,7 @@ Schema JSON esperado:
       "produto_nome": "Nome do Produto",
       "marca": "Marca",
       "peso_volume": "ex: 5kg, 1L",
-      "categoria": "Mercearia | Laticínios | Hortifrúti | Limpeza | Matinais | Bebidas",
+      "categoria": "mercearia | matinais | bebidas | acougue | frios_laticinios | hortifruti | padaria | limpeza | descartaveis_embalagens | bazar_utilidades | higiene_pessoal | congelados | pet_shop | temperos_condimentos",
       "preco_normal": 0.00,
       "preco_oferta": 0.00,
       "is_clube": false,

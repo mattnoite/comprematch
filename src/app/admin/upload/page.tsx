@@ -27,6 +27,7 @@ import {
 import { Toast, type ToastMessage } from "@/components/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { CATEGORY_MAP, resolveCategoryKey } from "@/lib/categoryAssets";
 import {
   OFERTA_CATEGORIAS,
   type ExtractApiResponse,
@@ -54,7 +55,7 @@ function createEmptyOffer(defaultDataFim: string): EditableOffer {
     produto_nome: "",
     marca: "",
     peso_volume: "",
-    categoria: "Mercearia",
+    categoria: "mercearia",
     preco_normal: 0,
     preco_oferta: 0,
     is_clube: false,
@@ -474,7 +475,7 @@ export default function AdminUploadPage() {
           produto_nome: item.produto_nome.trim(),
           marca: item.marca.trim() || null,
           peso_volume: item.peso_volume.trim() || null,
-          categoria: item.categoria.trim() || "Mercearia",
+          categoria: resolveCategoryKey(item.categoria),
           preco_normal: precoNormal,
           preco_oferta: precoOferta,
           is_clube: item.is_clube,
@@ -1000,7 +1001,7 @@ export default function AdminUploadPage() {
 
                           <td className="px-2.5 py-2.5">
                             <select
-                              value={row.categoria}
+                              value={resolveCategoryKey(row.categoria)}
                               onChange={(e) =>
                                 updateOfferField(
                                   row.localId,
@@ -1008,11 +1009,11 @@ export default function AdminUploadPage() {
                                   e.target.value
                                 )
                               }
-                              className="w-32 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                              className="w-36 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
                             >
                               {OFERTA_CATEGORIAS.map((cat) => (
                                 <option key={cat} value={cat}>
-                                  {cat}
+                                  {CATEGORY_MAP[cat]?.label ?? cat}
                                 </option>
                               ))}
                             </select>

@@ -27,16 +27,20 @@ export interface Encarte {
 }
 
 export const OFERTA_CATEGORIAS = [
-  "Mercearia",
-  "Laticínios",
-  "Hortifrúti",
-  "Limpeza",
-  "Matinais",
-  "Bebidas",
-  "Higiene",
-  "Açougue",
-  "Padaria",
-  "Outros",
+  "mercearia",
+  "matinais",
+  "bebidas",
+  "acougue",
+  "frios_laticinios",
+  "hortifruti",
+  "padaria",
+  "limpeza",
+  "descartaveis_embalagens",
+  "bazar_utilidades",
+  "higiene_pessoal",
+  "congelados",
+  "pet_shop",
+  "temperos_condimentos",
 ] as const;
 
 export type OfertaCategoria = (typeof OFERTA_CATEGORIAS)[number];
