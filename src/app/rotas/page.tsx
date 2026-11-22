@@ -16,8 +16,10 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import type { RouteMapOrigin, RouteMapStop } from "@/components/RouteMap";
+import type { NearbyBranchResult } from "@/app/api/mercados/proximos/route";
 import { useCart, type CartItem } from "@/hooks/useCart";
 import { normalizeChainKey } from "@/lib/chains";
+import { haversineMeters } from "@/lib/geo";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Mercado } from "@/types/database";
 
@@ -54,6 +56,8 @@ interface MarketBucket {
   endereco?: string;
   lat: number;
   lng: number;
+  distanceFromOriginMeters?: number;
+  fonte?: NearbyBranchResult["fonte"];
   items: CartItem[];
   itemCount: number;
   subtotal: number;
@@ -109,22 +113,6 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const mins = totalMinutes % 60;
   return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
-}
-
-function haversineMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6_371_000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function orderMarketsFromOrigin(
@@ -293,10 +281,14 @@ export default function RotasPage() {
   }, [items]);
 
   const [mercados, setMercados] = useState<Mercado[]>([]);
-  const [loadingMercados, setLoadingMercados] = useState<boolean>(() =>
-    isSupabaseConfigured()
-  );
   const [mercadosError, setMercadosError] = useState<string | null>(null);
+  const [nearbyResult, setNearbyResult] = useState<{
+    key: string;
+    branches: NearbyBranchResult[];
+    unmatchedRedes: string[];
+    useFallback: boolean;
+    warning: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -317,7 +309,7 @@ export default function RotasPage() {
 
         if (error) {
           setMercadosError(
-            "Não foi possível consultar as filiais na Grande São Paulo."
+            "Não foi possível carregar as filiais de referência no banco."
           );
           return;
         }
@@ -326,9 +318,7 @@ export default function RotasPage() {
         setMercadosError(null);
       } catch {
         if (!active) return;
-        setMercadosError("Falha de conexão ao carregar filiais disponíveis.");
-      } finally {
-        if (active) setLoadingMercados(false);
+        setMercadosError("Falha de conexão ao carregar filiais de referência.");
       }
     })();
 
@@ -362,14 +352,133 @@ export default function RotasPage() {
     return Array.from(map.values());
   }, [items]);
 
+  const chainNamesList = useMemo(
+    () => chainBuckets.map((b) => b.nome_rede),
+    [chainBuckets]
+  );
+
+  const nearbyQueryKey = useMemo(() => {
+    if (!origin || chainNamesList.length === 0) return "";
+    return `${origin.lat.toFixed(5)},${origin.lng.toFixed(5)}::${chainNamesList.join("|")}`;
+  }, [origin, chainNamesList]);
+
+  useEffect(() => {
+    if (!nearbyQueryKey || !origin || chainNamesList.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 22000);
+    let active = true;
+    const currentKey = nearbyQueryKey;
+    const currentOrigin = { lat: origin.lat, lng: origin.lng };
+    const currentRedes = chainNamesList;
+
+    async function fetchNearbyBranches() {
+      try {
+        const response = await fetch("/api/mercados/proximos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin: currentOrigin,
+            redes: currentRedes,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Status ${response.status}`);
+        }
+
+        const data = (await response.json()) as {
+          branches?: NearbyBranchResult[];
+          unmatchedRedes?: string[];
+        };
+
+        if (!active) return;
+
+        setNearbyResult({
+          key: currentKey,
+          branches: Array.isArray(data.branches) ? data.branches : [],
+          unmatchedRedes: Array.isArray(data.unmatchedRedes)
+            ? data.unmatchedRedes
+            : [],
+          useFallback: false,
+          warning: null,
+        });
+      } catch (err) {
+        if (!active) return;
+        if (err instanceof Error && err.name === "AbortError" && !controller.signal.aborted) {
+          return;
+        }
+        setNearbyResult({
+          key: currentKey,
+          branches: [],
+          unmatchedRedes: [],
+          useFallback: true,
+          warning:
+            "Busca em tempo real indisponível no momento. Usando filiais cadastradas como referência.",
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    void fetchNearbyBranches();
+
+    return () => {
+      active = false;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [nearbyQueryKey, origin, chainNamesList]);
+
+  const activeNearby =
+    nearbyQueryKey && nearbyResult?.key === nearbyQueryKey
+      ? nearbyResult
+      : null;
+  const nearbyLoading = Boolean(nearbyQueryKey) && !activeNearby;
+  const nearbyWarning = activeNearby?.warning ?? null;
+
   const { marketBuckets, missingChains } = useMemo(() => {
-    if (!origin || loadingMercados) {
+    if (!origin || !activeNearby) {
       return {
         marketBuckets: [] as MarketBucket[],
         missingChains: [] as string[],
       };
     }
 
+    if (!activeNearby.useFallback) {
+      const bucketByKey = new Map(chainBuckets.map((b) => [b.chainKey, b]));
+      const resolved: MarketBucket[] = [];
+
+      for (const branch of activeNearby.branches) {
+        const bucket = bucketByKey.get(branch.chainKey);
+        if (!bucket) continue;
+        resolved.push({
+          mercado_id: `${branch.chainKey}:${branch.lat.toFixed(5)},${branch.lng.toFixed(5)}`,
+          chainKey: branch.chainKey,
+          nome_rede: branch.nome_rede,
+          unidade: branch.unidade,
+          endereco: branch.endereco,
+          lat: branch.lat,
+          lng: branch.lng,
+          distanceFromOriginMeters: branch.distancia_metros,
+          fonte: branch.fonte,
+          items: bucket.items,
+          itemCount: bucket.itemCount,
+          subtotal: bucket.subtotal,
+          autoSelectedFromOrigin: true,
+        });
+      }
+
+      return {
+        marketBuckets: resolved,
+        missingChains: activeNearby.unmatchedRedes,
+      };
+    }
+
+    // Fallback cliente para tabela `mercados` se a API falhar por rede/timeout
     const branchesByChain = new Map<string, Mercado[]>();
     for (const branch of mercados) {
       const lat = Number(branch.latitude);
@@ -418,6 +527,8 @@ export default function RotasPage() {
           endereco: bestBranch.endereco,
           lat: bestBranch.latitude,
           lng: bestBranch.longitude,
+          distanceFromOriginMeters: Math.round(bestDistance),
+          fonte: "supabase",
           items: bucket.items,
           itemCount: bucket.itemCount,
           subtotal: bucket.subtotal,
@@ -446,6 +557,14 @@ export default function RotasPage() {
           unidade: fallbackItem.unidade ?? "Unidade da rede",
           lat: fallbackItem.lat,
           lng: fallbackItem.lng,
+          distanceFromOriginMeters: Math.round(
+            haversineMeters(
+              origin.lat,
+              origin.lng,
+              fallbackItem.lat,
+              fallbackItem.lng
+            )
+          ),
           items: bucket.items,
           itemCount: bucket.itemCount,
           subtotal: bucket.subtotal,
@@ -457,7 +576,7 @@ export default function RotasPage() {
     }
 
     return { marketBuckets: resolved, missingChains: missing };
-  }, [origin, loadingMercados, mercados, chainBuckets]);
+  }, [origin, activeNearby, mercados, chainBuckets]);
 
   const orderedStops = useMemo<OrderedStop[]>(
     () => (origin ? orderMarketsFromOrigin(marketBuckets, origin) : []),
@@ -836,7 +955,16 @@ export default function RotasPage() {
                     <span>{originError}</span>
                   </div>
                 )}
-                {mercadosError && (
+                {nearbyWarning && (
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-1.5 rounded-lg border border-brand-gold/50 bg-brand-yellow/10 px-2.5 py-2 text-xs font-medium text-brand-dark"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-gold" aria-hidden="true" />
+                    <span>{nearbyWarning}</span>
+                  </div>
+                )}
+                {activeNearby?.useFallback && mercadosError && (
                   <div
                     role="alert"
                     className="mt-2 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs font-medium text-red-700"
@@ -852,7 +980,7 @@ export default function RotasPage() {
                   >
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-gold" aria-hidden="true" />
                     <span>
-                      Sem filiais georreferenciadas na Grande SP para:{" "}
+                      Nenhuma filial encontrada próxima para:{" "}
                       {missingChains.join(", ")}.
                     </span>
                   </div>
@@ -928,13 +1056,13 @@ export default function RotasPage() {
                       </li>
                     );
                   })
-                ) : loadingMercados ? (
+                ) : nearbyLoading ? (
                   <li className="flex items-center gap-3 pb-2 text-xs font-medium text-brand-taupe">
                     <Loader2
                       className="h-4 w-4 animate-spin text-brand-gold"
                       aria-hidden="true"
                     />
-                    Localizando as filiais mais próximas da sua cesta…
+                    Localizando filiais mais próximas da sua localização…
                   </li>
                 ) : (
                   orderedStops.map((stop, idx) => {
@@ -972,7 +1100,10 @@ export default function RotasPage() {
                           </div>
                           {stop.autoSelectedFromOrigin && (
                             <p className="mt-0.5 text-[11px] font-semibold text-brand-olive">
-                              Filial mais próxima selecionada automaticamente
+                              Filial mais próxima
+                              {stop.distanceFromOriginMeters !== undefined
+                                ? ` (a ${formatDistanceKm(stop.distanceFromOriginMeters)} da origem)`
+                                : ""}
                               {stop.endereco ? ` · ${stop.endereco}` : ""}
                             </p>
                           )}
@@ -1030,7 +1161,7 @@ export default function RotasPage() {
                 stops={mapStops}
                 routeCoordinates={routeCoordinates}
               />
-              {origin && loadingMercados ? (
+              {origin && nearbyLoading ? (
                 <div className="absolute top-3 left-3 z-[1000] rounded-lg bg-brand-dark px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-yellow">
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
