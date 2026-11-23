@@ -5,8 +5,6 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowUpRight,
-  ChevronDown,
-  MapPin,
   Search,
   ShoppingBag,
   Store,
@@ -41,14 +39,6 @@ const CATEGORY_FILTERS: ReadonlyArray<{
   { label: "Higiene", key: "higiene_pessoal" },
   { label: "Bazar", key: "bazar_utilidades" },
 ];
-
-const BAIRRO_PRESETS = [
-  "Vila Mariana",
-  "Moema",
-  "Paraíso",
-  "Ipiranga",
-  "Pinheiros",
-] as const;
 
 const MICRO_LABEL =
   "text-[10px] font-bold uppercase tracking-widest text-brand-taupe";
@@ -123,10 +113,6 @@ export default function VitrinePublicaPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [bairro, setBairro] = useState<string>(BAIRRO_PRESETS[0]);
-  const [regionMenuOpen, setRegionMenuOpen] = useState<boolean>(false);
-  const regionMenuRef = useRef<HTMLDivElement | null>(null);
-
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
@@ -171,30 +157,6 @@ export default function VitrinePublicaPage() {
     document.addEventListener("keydown", handleShortcut);
     return () => document.removeEventListener("keydown", handleShortcut);
   }, []);
-
-  useEffect(() => {
-    if (!regionMenuOpen) return;
-
-    function handleOutsideClick(event: MouseEvent) {
-      if (
-        regionMenuRef.current &&
-        event.target instanceof Node &&
-        !regionMenuRef.current.contains(event.target)
-      ) {
-        setRegionMenuOpen(false);
-      }
-    }
-    function handleEsc(event: KeyboardEvent) {
-      if (event.key === "Escape") setRegionMenuOpen(false);
-    }
-
-    document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener("keydown", handleEsc);
-    return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener("keydown", handleEsc);
-    };
-  }, [regionMenuOpen]);
 
   useEffect(() => {
     let mounted = true;
@@ -479,57 +441,6 @@ export default function VitrinePublicaPage() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <div ref={regionMenuRef} className="relative hidden lg:block">
-              <button
-                id="region-selector-chip"
-                type="button"
-                aria-expanded={regionMenuOpen}
-                aria-controls="region-selector-panel"
-                onClick={() => setRegionMenuOpen((prev) => !prev)}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#EDEAE3] px-3 py-2 text-xs font-medium text-brand-dark transition-colors hover:bg-[#E5E1D8]"
-              >
-                <MapPin
-                  className="h-3.5 w-3.5 text-brand-taupe"
-                  aria-hidden="true"
-                />
-                {bairro}, SP
-                <ChevronDown
-                  className={`h-3 w-3 text-brand-taupe transition-transform ${
-                    regionMenuOpen ? "rotate-180" : ""
-                  }`}
-                  aria-hidden="true"
-                />
-              </button>
-
-              {regionMenuOpen && (
-                <div
-                  id="region-selector-panel"
-                  className="absolute top-full right-0 z-50 mt-2 w-60 rounded-2xl border border-[#333029]/10 bg-white p-3"
-                >
-                  <p className={MICRO_LABEL}>Bairro</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {BAIRRO_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          setBairro(preset);
-                          setRegionMenuOpen(false);
-                        }}
-                        className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
-                          bairro === preset
-                            ? "border-brand-dark bg-brand-dark text-white"
-                            : "border-[#333029]/10 bg-white text-brand-dark hover:border-brand-gold"
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
             <Link
               href={
                 !authLoading && isAuthorizedStaff ? "/admin/upload" : "/login"
@@ -709,7 +620,7 @@ export default function VitrinePublicaPage() {
                   ? "Carregando…"
                   : `${filteredOfertas.length} ${
                       filteredOfertas.length === 1 ? "oferta" : "ofertas"
-                    } · ${bairro}, SP`}
+                    } · Grande São Paulo`}
               </p>
             </div>
 
