@@ -24,6 +24,10 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "admin", label: "Admin" },
 ];
 
+const MICRO_LABEL =
+  "text-[10px] font-bold uppercase tracking-widest text-brand-taupe";
+const NUM = "font-mono tabular-nums tracking-tight";
+
 function formatDate(isoDate?: string | null): string {
   if (!isoDate) return "—";
   const date = new Date(isoDate);
@@ -40,12 +44,12 @@ function formatDate(isoDate?: string | null): string {
 function getRoleBadgeClasses(role: UserRole): string {
   switch (role) {
     case "admin":
-      return "border border-brand-dark bg-brand-dark text-brand-yellow";
+      return "border border-[#333029] bg-[#333029] text-brand-yellow";
     case "colaborador":
-      return "border border-brand-olive bg-brand-olive/20 text-brand-dark";
+      return "border border-brand-gold/50 bg-brand-yellow/15 text-brand-dark";
     case "consumidor":
     default:
-      return "border border-brand-taupe/40 bg-brand-taupe/10 text-brand-taupe";
+      return "border border-[#333029]/10 bg-[#F3F1EC] text-brand-taupe";
   }
 }
 
@@ -199,20 +203,20 @@ export default function AdminUsuariosPage() {
 
   if (!authLoading && !isAdmin) {
     return (
-      <div className="mx-auto max-w-lg rounded-2xl border border-brand-taupe bg-white p-8 text-center shadow-xs">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-brand-yellow/25 text-brand-dark">
-          <ShieldAlert className="h-6 w-6" aria-hidden="true" />
+      <div className="mx-auto max-w-lg rounded-2xl border border-[#333029]/10 bg-white p-6 text-center sm:p-8">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F3F1EC] text-brand-dark">
+          <ShieldAlert className="h-6 w-6 text-brand-olive" aria-hidden="true" />
         </div>
-        <h1 className="mt-4 text-xl font-bold text-brand-dark">
+        <h1 className="mt-4 font-serif text-2xl font-semibold tracking-tight text-brand-dark">
           Acesso exclusivo para administradores
         </h1>
-        <p className="mt-2 text-sm text-brand-taupe">
+        <p className="mt-2 text-sm leading-relaxed text-brand-taupe">
           Seu perfil atual permite enviar e revisar encartes, mas apenas
           usuários com role <strong>admin</strong> podem alterar permissões.
         </p>
         <Link
           href="/admin/upload"
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark transition-colors hover:bg-brand-gold"
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-[0.98]"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Voltar para Upload de Encartes
@@ -223,18 +227,16 @@ export default function AdminUsuariosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-brand-olive/30 bg-brand-olive/10 px-3 py-1 text-xs font-semibold text-brand-olive">
-              <Shield className="h-3.5 w-3.5" aria-hidden="true" />
-              Portal do Lojista
-            </span>
-          </div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-dark">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-[#EDEAE3] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-brand-taupe">
+            <Shield className="h-3 w-3 text-brand-olive" aria-hidden="true" />
+            Portal do Lojista
+          </span>
+          <h1 className="mt-2.5 font-serif text-3xl font-semibold tracking-tight text-brand-dark sm:text-4xl">
             Equipe e Permissões de Acesso
           </h1>
-          <p className="mt-1 text-sm text-brand-taupe">
+          <p className="mt-1.5 text-sm leading-relaxed text-brand-taupe">
             Gerencie quem pode publicar catálogos promocionais ou administrar
             contas da sua operação.
           </p>
@@ -245,7 +247,7 @@ export default function AdminUsuariosPage() {
           type="button"
           onClick={() => void handleRefresh()}
           disabled={loadingList}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:opacity-60"
+          className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-brand-yellow px-4 py-2.5 text-sm font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-[0.98] disabled:opacity-60 sm:w-auto"
         >
           <RefreshCw
             className={`h-4 w-4 ${loadingList ? "animate-spin" : ""}`}
@@ -255,8 +257,8 @@ export default function AdminUsuariosPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-taupe bg-white p-4">
-        <div className="relative min-w-[240px] flex-1">
+      <div className="flex flex-col gap-3 rounded-2xl border border-[#333029]/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
+        <div className="relative min-w-0 flex-1">
           <Search
             className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-brand-taupe"
             aria-hidden="true"
@@ -267,24 +269,30 @@ export default function AdminUsuariosPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Filtrar por e-mail..."
-            className="w-full rounded-lg border border-brand-taupe py-2 pr-3 pl-9 text-sm text-brand-dark placeholder:text-brand-taupe/60 focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/40 focus:outline-none"
+            className="w-full rounded-lg border border-[#333029]/15 bg-white py-2.5 pr-3 pl-9 text-sm text-brand-dark placeholder:text-brand-taupe/60 focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 md:pb-0">
           {(["all", "admin", "colaborador", "consumidor"] as const).map(
             (filterValue) => (
               <button
                 key={filterValue}
                 type="button"
                 onClick={() => setRoleFilter(filterValue)}
-                className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                className={`shrink-0 cursor-pointer rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
                   roleFilter === filterValue
-                    ? "bg-brand-dark text-brand-yellow"
-                    : "border border-brand-taupe/50 bg-[#faf7ef] text-brand-taupe hover:text-brand-dark"
+                    ? "bg-[#333029] text-white"
+                    : "border border-[#333029]/10 bg-[#F8F7F4] text-brand-taupe hover:border-brand-gold hover:text-brand-dark"
                 }`}
               >
-                {filterValue === "all" ? "Todos" : filterValue}
+                {filterValue === "all"
+                  ? "Todos"
+                  : filterValue === "admin"
+                    ? "Admin"
+                    : filterValue === "colaborador"
+                      ? "Colaborador"
+                      : "Consumidor"}
               </button>
             )
           )}
@@ -294,7 +302,7 @@ export default function AdminUsuariosPage() {
       {errorList && (
         <div
           role="alert"
-          className="flex items-start gap-2.5 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800"
+          className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
           <AlertTriangle
             className="mt-0.5 h-5 w-5 shrink-0"
@@ -307,131 +315,206 @@ export default function AdminUsuariosPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-brand-taupe bg-white shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-brand-taupe bg-brand-dark text-xs font-semibold uppercase tracking-wider text-white">
-                <th className="px-5 py-3.5">Usuário (E-mail)</th>
-                <th className="px-5 py-3.5">Role Atual</th>
-                <th className="px-5 py-3.5">Data de Criação</th>
-                <th className="px-5 py-3.5 text-right">Alterar Permissão</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-brand-taupe/30">
-              {loadingList ? (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="px-5 py-12 text-center text-brand-taupe"
-                  >
-                    <div className="inline-flex items-center gap-2">
-                      <Loader2
-                        className="h-5 w-5 animate-spin text-brand-gold"
-                        aria-hidden="true"
-                      />
-                      Carregando usuários cadastrados...
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredPerfis.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="px-5 py-12 text-center text-brand-taupe"
-                  >
-                    <Users
-                      className="mx-auto mb-2 h-6 w-6 text-brand-taupe/70"
-                      aria-hidden="true"
-                    />
-                    Nenhum usuário encontrado com os filtros atuais.
-                  </td>
-                </tr>
-              ) : (
-                filteredPerfis.map((perfil) => {
-                  const isSelf = perfil.id === currentUser?.id;
-                  const isBusy = updatingId === perfil.id;
+      <div className="overflow-hidden rounded-2xl border border-[#333029]/10 bg-white">
+        {loadingList ? (
+          <div className="px-5 py-14 text-center text-sm text-brand-taupe">
+            <div className="inline-flex items-center gap-2">
+              <Loader2
+                className="h-5 w-5 animate-spin text-brand-gold"
+                aria-hidden="true"
+              />
+              Carregando usuários cadastrados...
+            </div>
+          </div>
+        ) : filteredPerfis.length === 0 ? (
+          <div className="px-5 py-14 text-center text-sm text-brand-taupe">
+            <Users
+              className="mx-auto mb-2 h-6 w-6 text-brand-olive"
+              aria-hidden="true"
+            />
+            Nenhum usuário encontrado com os filtros atuais.
+          </div>
+        ) : (
+          <>
+            {/* Lista em cards para celular (< md) */}
+            <ul className="divide-y divide-[#333029]/10 md:hidden">
+              {filteredPerfis.map((perfil) => {
+                const isSelf = perfil.id === currentUser?.id;
+                const isBusy = updatingId === perfil.id;
 
-                  return (
-                    <tr
-                      key={perfil.id}
-                      className="transition-colors hover:bg-[#fcfaf5]"
-                    >
-                      <td className="px-5 py-4 font-medium text-brand-dark">
-                        <div className="flex items-center gap-2">
+                return (
+                  <li key={perfil.id} className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
                           <UserCheck
                             className="h-4 w-4 shrink-0 text-brand-olive"
                             aria-hidden="true"
                           />
-                          <span>{perfil.email}</span>
+                          <p className="truncate text-sm font-semibold text-brand-dark">
+                            {perfil.email}
+                          </p>
                           {isSelf && (
-                            <span className="rounded-md bg-brand-yellow/25 px-2 py-0.5 text-[11px] font-bold text-brand-dark">
+                            <span className="shrink-0 rounded-md bg-brand-yellow/25 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-dark">
                               Você
                             </span>
                           )}
                         </div>
-                      </td>
+                        <p className={`mt-1 text-[11px] text-brand-taupe ${NUM}`}>
+                          Criado em {formatDate(perfil.created_at)}
+                        </p>
+                      </div>
 
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeClasses(
-                            perfil.role
-                          )}`}
-                        >
-                          {perfil.role}
-                        </span>
-                      </td>
+                      <span
+                        className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${getRoleBadgeClasses(
+                          perfil.role
+                        )}`}
+                      >
+                        {perfil.role}
+                      </span>
+                    </div>
 
-                      <td className="px-5 py-4 text-xs text-brand-taupe">
-                        {formatDate(perfil.created_at)}
-                      </td>
+                    <div className="flex items-center gap-2">
+                      <div
+                        role="group"
+                        aria-label={`Alternar role de ${perfil.email}`}
+                        className="grid flex-1 grid-cols-3 gap-1 rounded-xl border border-[#333029]/10 bg-[#F3F1EC] p-1"
+                      >
+                        {ROLE_OPTIONS.map((opt) => {
+                          const active = perfil.role === opt.value;
+                          const disabledSelf =
+                            isSelf && opt.value !== "admin";
 
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <div
-                            role="group"
-                            aria-label={`Alternar role de ${perfil.email}`}
-                            className="inline-flex rounded-lg border border-brand-taupe bg-[#faf7ef] p-0.5"
-                          >
-                            {ROLE_OPTIONS.map((opt) => {
-                              const active = perfil.role === opt.value;
-                              const disabledSelf =
-                                isSelf && opt.value !== "admin";
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              disabled={isBusy || disabledSelf}
+                              onClick={() =>
+                                void handleRoleChange(perfil, opt.value)
+                              }
+                              className={`cursor-pointer rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                active
+                                  ? "bg-brand-yellow text-brand-dark"
+                                  : "text-brand-taupe hover:text-brand-dark"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {isBusy && (
+                        <Loader2
+                          className="h-4 w-4 shrink-0 animate-spin text-brand-gold"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
 
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  disabled={isBusy || disabledSelf}
-                                  onClick={() =>
-                                    void handleRoleChange(perfil, opt.value)
-                                  }
-                                  className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    active
-                                      ? "bg-brand-yellow text-brand-dark shadow-xs"
-                                      : "text-brand-taupe hover:text-brand-dark"
-                                  }`}
-                                >
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {isBusy && (
-                            <Loader2
-                              className="h-4 w-4 animate-spin text-brand-gold"
+            {/* Tabela completa no desktop (>= md) */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full border-collapse text-left text-sm">
+                <thead>
+                  <tr
+                    className={`border-b border-[#333029]/10 bg-[#F3F1EC] ${MICRO_LABEL}`}
+                  >
+                    <th className="px-5 py-3.5">Usuário (E-mail)</th>
+                    <th className="px-5 py-3.5">Role Atual</th>
+                    <th className="px-5 py-3.5">Data de Criação</th>
+                    <th className="px-5 py-3.5 text-right">Alterar Permissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#333029]/10">
+                  {filteredPerfis.map((perfil) => {
+                    const isSelf = perfil.id === currentUser?.id;
+                    const isBusy = updatingId === perfil.id;
+
+                    return (
+                      <tr
+                        key={perfil.id}
+                        className="transition-colors hover:bg-[#F8F7F4]"
+                      >
+                        <td className="px-5 py-4 font-medium text-brand-dark">
+                          <div className="flex items-center gap-2">
+                            <UserCheck
+                              className="h-4 w-4 shrink-0 text-brand-olive"
                               aria-hidden="true"
                             />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                            <span>{perfil.email}</span>
+                            {isSelf && (
+                              <span className="rounded-md bg-brand-yellow/25 px-2 py-0.5 text-[11px] font-bold text-brand-dark">
+                                Você
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeClasses(
+                              perfil.role
+                            )}`}
+                          >
+                            {perfil.role}
+                          </span>
+                        </td>
+
+                        <td className={`px-5 py-4 text-xs text-brand-taupe ${NUM}`}>
+                          {formatDate(perfil.created_at)}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <div
+                              role="group"
+                              aria-label={`Alternar role de ${perfil.email}`}
+                              className="inline-flex rounded-xl border border-[#333029]/10 bg-[#F3F1EC] p-0.5"
+                            >
+                              {ROLE_OPTIONS.map((opt) => {
+                                const active = perfil.role === opt.value;
+                                const disabledSelf =
+                                  isSelf && opt.value !== "admin";
+
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    disabled={isBusy || disabledSelf}
+                                    onClick={() =>
+                                      void handleRoleChange(perfil, opt.value)
+                                    }
+                                    className={`cursor-pointer rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      active
+                                        ? "bg-brand-yellow text-brand-dark"
+                                        : "text-brand-taupe hover:text-brand-dark"
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {isBusy && (
+                              <Loader2
+                                className="h-4 w-4 animate-spin text-brand-gold"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       <Toast toast={toast} onClose={() => setToast(null)} />

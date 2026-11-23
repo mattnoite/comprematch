@@ -72,6 +72,10 @@ const ACCEPTED_TYPES = new Set([
   "application/pdf",
 ]);
 
+const MICRO_LABEL =
+  "text-[10px] font-bold uppercase tracking-widest text-brand-taupe";
+const NUM = "font-mono tabular-nums tracking-tight";
+
 const EXTRACTION_STAGES = [
   "Lendo layout e validade do encarte...",
   "Identificando rede do supermercado...",
@@ -543,28 +547,28 @@ export default function AdminUploadPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-olive/30 bg-brand-olive/10 px-3 py-1 text-xs font-semibold text-brand-olive">
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-[#EDEAE3] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-brand-taupe">
+            <Sparkles className="h-3 w-3 text-brand-olive" aria-hidden="true" />
             Leitura Inteligente de Encartes
           </span>
-          <h1 className="mt-2.5 text-2xl font-black tracking-tight text-brand-dark sm:text-3xl">
-            Portal do Lojista / Ingestão de Catálogos
+          <h1 className="mt-2.5 font-serif text-3xl font-semibold tracking-tight text-brand-dark sm:text-4xl">
+            Ingestão de Catálogos
           </h1>
-          <p className="mt-1 text-sm text-brand-taupe">
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-brand-taupe">
             Faça upload de encartes em imagem ou PDF para extrair ofertas
             automaticamente e publicar na vitrine em segundos.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
           <button
             id="extract-ai-btn"
             type="button"
             onClick={() => void handleExtractWithAI()}
             disabled={extracting || !selectedFile}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-yellow px-5 py-2.5 text-sm font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+            className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-brand-yellow px-5 py-2.5 text-sm font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
           >
             {extracting ? (
               <>
@@ -584,7 +588,7 @@ export default function AdminUploadPage() {
             type="button"
             onClick={() => void handleSaveToDatabase()}
             disabled={saving || ofertas.length === 0 || !mercadoId}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand-dark px-5 py-2.5 text-sm font-semibold text-brand-yellow shadow-xs transition-all hover:bg-brand-taupe active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#333029] px-5 py-2.5 text-sm font-bold text-brand-yellow transition-all hover:bg-[#333029]/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             {saving ? (
               <>
@@ -602,19 +606,19 @@ export default function AdminUploadPage() {
       </div>
 
       {/* Configuração do Catálogo */}
-      <section className="grid gap-5 rounded-2xl border border-stone-200/70 bg-white p-5 shadow-2xs sm:grid-cols-2">
+      <section className="grid gap-5 rounded-2xl border border-[#333029]/10 bg-white p-4 sm:grid-cols-2 sm:p-5">
         <div>
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <label
               htmlFor="mercado-select"
-              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
+              className={`flex items-center gap-1.5 ${MICRO_LABEL}`}
             >
               <Store className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
               Rede de Supermercado
             </label>
 
             {mercadoDetectionStatus === "matched" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-brand-gold bg-brand-yellow/15 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-gold/50 bg-brand-yellow/15 px-2.5 py-0.5 text-[11px] font-semibold text-brand-dark">
                 <Sparkles className="h-3 w-3 text-brand-olive" aria-hidden="true" />
                 Identificado automaticamente via IA
               </span>
@@ -636,10 +640,10 @@ export default function AdminUploadPage() {
               setMercadoDetectionStatus("idle");
             }}
             disabled={loadingMercados}
-            className={`w-full rounded-xl border bg-[#FAFAF9] px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-olive focus:bg-white focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none disabled:opacity-60 ${
+            className={`w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none disabled:opacity-60 ${
               mercadoDetectionStatus === "unmatched"
                 ? "border-brand-gold ring-2 ring-brand-yellow/30"
-                : "border-stone-200/90"
+                : "border-[#333029]/15"
             }`}
           >
             {loadingMercados ? (
@@ -688,7 +692,7 @@ export default function AdminUploadPage() {
         <div>
           <label
             htmlFor="data-inicio-input"
-            className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
+            className={`mb-1.5 flex items-center gap-1.5 ${MICRO_LABEL}`}
           >
             <Calendar
               className="h-3.5 w-3.5 text-brand-olive"
@@ -701,7 +705,7 @@ export default function AdminUploadPage() {
             type="date"
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}
-            className="w-full rounded-xl border border-stone-200/90 bg-[#FAFAF9] px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-olive focus:bg-white focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+            className="w-full rounded-lg border border-[#333029]/15 bg-white px-3.5 py-2.5 text-sm font-medium text-brand-dark transition-colors focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
           />
           <p className="mt-1.5 text-xs text-brand-taupe">
             Capturada automaticamente quando presente no cabeçalho ou rodapé do
@@ -710,15 +714,15 @@ export default function AdminUploadPage() {
         </div>
       </section>
 
-      {/* Área Principal: Preview à esquerda + Tabela de Conferência à direita/abaixo */}
+      {/* Área Principal: Preview à esquerda + Conferência à direita/abaixo */}
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Coluna de Upload & Preview (Estilo Stripe / Vercel) */}
+        {/* Coluna de Upload & Preview */}
         <section className="space-y-4 lg:col-span-4">
-          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-2xs">
-            <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
-              <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-dark">
+          <div className="overflow-hidden rounded-2xl border border-[#333029]/10 bg-white">
+            <div className="flex items-center justify-between border-b border-[#333029]/10 px-4 py-3.5 sm:px-5">
+              <span className={`flex items-center gap-2 ${MICRO_LABEL}`}>
                 <ImageIcon
-                  className="h-4 w-4 text-brand-olive"
+                  className="h-3.5 w-3.5 text-brand-olive"
                   aria-hidden="true"
                 />
                 Upload de Catálogo
@@ -727,7 +731,7 @@ export default function AdminUploadPage() {
                 <button
                   type="button"
                   onClick={clearSelectedFile}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-taupe transition-colors hover:bg-stone-100 hover:text-brand-dark"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-brand-taupe transition-colors hover:bg-[#F3F1EC] hover:text-brand-dark"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                   Remover
@@ -735,7 +739,7 @@ export default function AdminUploadPage() {
               )}
             </div>
 
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
               <div
                 role="button"
                 tabIndex={0}
@@ -752,13 +756,13 @@ export default function AdminUploadPage() {
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-all ${
+                className={`group flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-5 py-8 text-center transition-all ${
                   isDragging
                     ? "border-brand-yellow bg-brand-yellow/10"
-                    : "border-stone-300/90 bg-[#FAFAF9] hover:border-brand-olive hover:bg-brand-yellow/5"
+                    : "border-[#333029]/25 bg-[#F8F7F4] hover:border-brand-gold hover:bg-brand-yellow/5"
                 }`}
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200/80 bg-white text-brand-olive shadow-2xs transition-transform group-hover:scale-105">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#333029]/10 bg-white text-brand-olive transition-transform group-hover:scale-105">
                   <UploadCloud className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <p className="mt-3.5 text-sm font-bold text-brand-dark">
@@ -812,16 +816,18 @@ export default function AdminUploadPage() {
 
               {selectedFile && previewUrl && (
                 <div className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between rounded-xl border border-stone-200/80 bg-[#FAFAF9] px-3.5 py-2.5 text-xs">
+                  <div className="flex items-center justify-between rounded-xl border border-[#333029]/10 bg-[#F3F1EC] px-3.5 py-2.5 text-xs">
                     <span className="truncate font-semibold text-brand-dark">
                       {selectedFile.name}
                     </span>
-                    <span className="ml-2 shrink-0 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-taupe ring-1 ring-stone-200/80">
+                    <span
+                      className={`ml-2 shrink-0 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-taupe ${NUM}`}
+                    >
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                     </span>
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-stone-200/80 bg-[#FAFAF9]">
+                  <div className="overflow-hidden rounded-2xl border border-[#333029]/10 bg-[#F3F1EC]">
                     {isPdf ? (
                       <div className="space-y-2 p-3">
                         <div className="flex items-center gap-2 text-xs font-semibold text-brand-dark">
@@ -834,7 +840,7 @@ export default function AdminUploadPage() {
                         <iframe
                           src={previewUrl}
                           title="Pré-visualização do catálogo em PDF"
-                          className="h-80 w-full rounded-xl border border-stone-200/70 bg-white"
+                          className="h-64 w-full rounded-xl border border-[#333029]/10 bg-white sm:h-80"
                         />
                       </div>
                     ) : (
@@ -852,15 +858,17 @@ export default function AdminUploadPage() {
           </div>
         </section>
 
-        {/* Coluna da Tabela de Conferência Limpa */}
+        {/* Coluna da Tabela / Cards de Conferência */}
         <section className="lg:col-span-8">
-          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
+          <div className="overflow-hidden rounded-2xl border border-[#333029]/10 bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#333029]/10 px-4 py-4 sm:px-5">
               <div className="flex items-center gap-2.5">
-                <h2 className="text-sm font-extrabold tracking-tight text-brand-dark">
+                <h2 className="font-serif text-xl font-semibold tracking-tight text-brand-dark">
                   Conferência de Ofertas
                 </h2>
-                <span className="rounded-full bg-brand-yellow/25 px-2.5 py-0.5 text-xs font-bold text-brand-dark">
+                <span
+                  className={`rounded-md bg-[#EDEAE3] px-2.5 py-0.5 text-xs font-bold text-brand-dark ${NUM}`}
+                >
                   {ofertas.length}{" "}
                   {ofertas.length === 1 ? "item" : "itens"}
                 </span>
@@ -870,20 +878,20 @@ export default function AdminUploadPage() {
                 id="add-manual-row-btn"
                 type="button"
                 onClick={addManualRow}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-brand-olive/45 bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark transition-all hover:border-brand-gold hover:bg-brand-yellow/15 active:scale-95"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#333029]/25 bg-white px-3.5 py-1.5 text-xs font-semibold text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold active:scale-[0.98]"
               >
                 <Plus className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
-                + Adicionar Linha Manual
+                Adicionar Linha Manual
               </button>
             </div>
 
             {/* Bloco de Controle de Vigência */}
-            <div className="border-b border-stone-200/70 bg-[#FAFAF9] px-5 py-4">
+            <div className="border-b border-[#333029]/10 bg-[#F3F1EC]/65 px-4 py-4 sm:px-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="max-w-xs flex-1">
+                <div className="w-full sm:max-w-xs sm:flex-1">
                   <label
                     htmlFor="data-fim-geral-input"
-                    className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark"
+                    className={`mb-1.5 flex items-center gap-1.5 ${MICRO_LABEL}`}
                   >
                     <Calendar
                       className="h-3.5 w-3.5 text-brand-olive"
@@ -896,7 +904,7 @@ export default function AdminUploadPage() {
                     type="date"
                     value={dataFim}
                     onChange={(e) => handleGlobalDataFimChange(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200/90 bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                    className="w-full rounded-lg border border-[#333029]/15 bg-white px-3.5 py-2 text-sm font-semibold text-brand-dark transition-colors focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
                   />
                 </div>
 
@@ -905,7 +913,7 @@ export default function AdminUploadPage() {
                   type="button"
                   onClick={applyGlobalValidityToAllItems}
                   disabled={ofertas.length === 0 || !dataFim}
-                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-4 py-2.5 text-xs font-semibold text-brand-dark shadow-xs transition-all hover:bg-brand-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+                  className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-brand-yellow px-4 py-2.5 text-xs font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
                 >
                   <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
                   Aplicar esta validade a todos os itens
@@ -913,17 +921,17 @@ export default function AdminUploadPage() {
               </div>
               <p className="mt-2 text-xs text-brand-taupe">
                 Preenchida automaticamente pela leitura do catálogo. Edite aqui
-                ou ajuste prazos específicos na coluna{" "}
+                ou ajuste prazos específicos no campo{" "}
                 <strong className="text-brand-dark">Validade</strong>.
               </p>
             </div>
 
             {ofertas.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-yellow/20 text-brand-dark">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F3F1EC] text-brand-olive">
                   <Sparkles className="h-6 w-6" aria-hidden="true" />
                 </div>
-                <h3 className="mt-4 text-base font-bold text-brand-dark">
+                <h3 className="mt-4 font-serif text-lg font-semibold text-brand-dark">
                   Nenhuma oferta em conferência
                 </h3>
                 <p className="mt-1 max-w-md text-xs leading-relaxed text-brand-taupe">
@@ -934,57 +942,77 @@ export default function AdminUploadPage() {
                 <button
                   type="button"
                   onClick={addManualRow}
-                  className="mt-5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-200/90 bg-white px-4 py-2 text-xs font-semibold text-brand-dark transition-all hover:border-brand-olive hover:bg-brand-yellow/10 active:scale-95"
+                  className="mt-5 inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#333029]/25 bg-white px-4 py-2 text-xs font-semibold text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold active:scale-[0.98]"
                 >
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />+
+                  <Plus className="h-3.5 w-3.5 text-brand-olive" aria-hidden="true" />
                   Adicionar Linha Manual
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px] border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-stone-200/80 bg-[#FAFAF9] text-[11px] font-bold uppercase tracking-wider text-brand-taupe">
-                      <th scope="col" className="px-3 py-3">Produto</th>
-                      <th scope="col" className="px-3 py-3">Marca</th>
-                      <th scope="col" className="px-3 py-3">Peso/Vol.</th>
-                      <th scope="col" className="px-3 py-3">Categoria</th>
-                      <th scope="col" className="px-3 py-3">Normal (R$)</th>
-                      <th scope="col" className="px-3 py-3">Oferta (R$)</th>
-                      <th scope="col" className="px-3 py-3 text-center">Fidelidade</th>
-                      <th scope="col" className="px-3 py-3">Validade</th>
-                      <th scope="col" className="px-3 py-3 text-center">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {ofertas.map((row) => {
-                      const hasPriceAlert =
-                        row.preco_oferta <= 0 ||
-                        (row.preco_normal > 0 &&
-                          row.preco_oferta > row.preco_normal);
+              <>
+                {/* Visualização em cards no celular (< md) */}
+                <div className="space-y-3 p-4 md:hidden">
+                  {ofertas.map((row, idx) => {
+                    const hasPriceAlert =
+                      row.preco_oferta <= 0 ||
+                      (row.preco_normal > 0 &&
+                        row.preco_oferta > row.preco_normal);
 
-                      return (
-                        <tr
-                          key={row.localId}
-                          className="transition-colors hover:bg-[#FAFAF9]/80"
-                        >
-                          <td className="px-2.5 py-2.5">
-                            <input
-                              type="text"
-                              value={row.produto_nome}
-                              onChange={(e) =>
-                                updateOfferField(
-                                  row.localId,
-                                  "produto_nome",
-                                  e.target.value
-                                )
-                              }
-                              placeholder="Ex: Arroz Branco Tipo 1"
-                              className="w-full min-w-[170px] rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
-                            />
-                          </td>
+                    return (
+                      <article
+                        key={row.localId}
+                        className="space-y-3 rounded-2xl border border-[#333029]/10 bg-[#F8F7F4]/80 p-3.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`${MICRO_LABEL} ${NUM}`}>
+                            Item #{String(idx + 1).padStart(2, "0")}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => duplicateOfferRow(row.localId)}
+                              title="Duplicar item"
+                              aria-label={`Duplicar ${row.produto_nome || "item"}`}
+                              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[#333029]/15 bg-white text-brand-taupe transition-colors hover:border-brand-gold hover:text-brand-dark"
+                            >
+                              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeOfferRow(row.localId)}
+                              title="Remover item"
+                              aria-label={`Remover ${row.produto_nome || "item"}`}
+                              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[#333029]/15 bg-white text-brand-taupe transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
 
-                          <td className="px-2.5 py-2.5">
+                        <div>
+                          <label className={`mb-1 block ${MICRO_LABEL}`}>
+                            Produto
+                          </label>
+                          <input
+                            type="text"
+                            value={row.produto_nome}
+                            onChange={(e) =>
+                              updateOfferField(
+                                row.localId,
+                                "produto_nome",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Ex: Arroz Branco Tipo 1"
+                            className="w-full rounded-lg border border-[#333029]/15 bg-white px-3 py-2 text-sm font-semibold text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className={`mb-1 block ${MICRO_LABEL}`}>
+                              Marca
+                            </label>
                             <input
                               type="text"
                               value={row.marca}
@@ -996,11 +1024,14 @@ export default function AdminUploadPage() {
                                 )
                               }
                               placeholder="Marca"
-                              className="w-28 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                              className="w-full rounded-lg border border-[#333029]/15 bg-white px-3 py-2 text-xs text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
                             />
-                          </td>
+                          </div>
 
-                          <td className="px-2.5 py-2.5">
+                          <div>
+                            <label className={`mb-1 block ${MICRO_LABEL}`}>
+                              Peso / Vol.
+                            </label>
                             <input
                               type="text"
                               value={row.peso_volume}
@@ -1012,31 +1043,16 @@ export default function AdminUploadPage() {
                                 )
                               }
                               placeholder="5kg"
-                              className="w-20 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                              className="w-full rounded-lg border border-[#333029]/15 bg-white px-3 py-2 text-xs text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
                             />
-                          </td>
+                          </div>
+                        </div>
 
-                          <td className="px-2.5 py-2.5">
-                            <select
-                              value={resolveCategoryKey(row.categoria)}
-                              onChange={(e) =>
-                                updateOfferField(
-                                  row.localId,
-                                  "categoria",
-                                  e.target.value
-                                )
-                              }
-                              className="w-36 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
-                            >
-                              {OFERTA_CATEGORIAS.map((cat) => (
-                                <option key={cat} value={cat}>
-                                  {CATEGORY_MAP[cat]?.label ?? cat}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-
-                          <td className="px-2.5 py-2.5">
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className={`mb-1 block ${MICRO_LABEL}`}>
+                              Normal (R$)
+                            </label>
                             <input
                               type="number"
                               step="0.01"
@@ -1049,67 +1065,69 @@ export default function AdminUploadPage() {
                                   Number.parseFloat(e.target.value) || 0
                                 )
                               }
-                              className="w-22 rounded-xl border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs text-brand-taupe focus:border-brand-olive focus:ring-2 focus:ring-brand-yellow/35 focus:outline-none"
+                              className={`w-full rounded-lg border border-[#333029]/15 bg-white px-3 py-2 text-xs text-brand-taupe focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none ${NUM}`}
                             />
-                          </td>
+                          </div>
 
-                          <td className="px-2.5 py-2.5">
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={row.preco_oferta}
-                                onChange={(e) =>
-                                  updateOfferField(
-                                    row.localId,
-                                    "preco_oferta",
-                                    Number.parseFloat(e.target.value) || 0
-                                  )
-                                }
-                                className={`w-22 rounded-xl border bg-white px-2.5 py-1.5 text-xs font-bold text-brand-dark focus:ring-2 focus:outline-none ${
-                                  hasPriceAlert
-                                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
-                                    : "border-stone-200/90 focus:border-brand-olive focus:ring-brand-yellow/35"
-                                }`}
-                              />
+                          <div>
+                            <label className={`mb-1 flex items-center gap-1 ${MICRO_LABEL}`}>
+                              Oferta (R$)
                               {hasPriceAlert && (
-                                <span title="Confira o preço promocional">
-                                  <AlertTriangle
-                                    className="h-3.5 w-3.5 text-red-600"
-                                    aria-hidden="true"
-                                  />
-                                </span>
+                                <AlertTriangle
+                                  className="h-3 w-3 text-red-600"
+                                  aria-hidden="true"
+                                />
                               )}
-                            </div>
-                          </td>
-
-                          <td className="px-2.5 py-2.5 text-center">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={row.is_clube}
-                              onClick={() =>
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={row.preco_oferta}
+                              onChange={(e) =>
                                 updateOfferField(
                                   row.localId,
-                                  "is_clube",
-                                  !row.is_clube
+                                  "preco_oferta",
+                                  Number.parseFloat(e.target.value) || 0
                                 )
                               }
-                              className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all active:scale-95 ${
-                                row.is_clube
-                                  ? "border-brand-gold bg-brand-yellow/20 text-brand-dark"
-                                  : "border-stone-200/90 bg-[#FAFAF9] text-brand-taupe hover:border-brand-olive"
+                              className={`w-full rounded-lg border bg-white px-3 py-2 text-xs font-bold text-brand-dark focus:ring-2 focus:outline-none ${NUM} ${
+                                hasPriceAlert
+                                  ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                                  : "border-[#333029]/15 focus:border-brand-gold focus:ring-brand-yellow/30"
                               }`}
-                            >
-                              {row.is_clube && (
-                                <Check className="h-3 w-3 text-brand-olive" aria-hidden="true" />
-                              )}
-                              {row.is_clube ? "Preço Clube" : "Regular"}
-                            </button>
-                          </td>
+                            />
+                          </div>
+                        </div>
 
-                          <td className="px-2.5 py-2.5">
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className={`mb-1 block ${MICRO_LABEL}`}>
+                              Categoria
+                            </label>
+                            <select
+                              value={resolveCategoryKey(row.categoria)}
+                              onChange={(e) =>
+                                updateOfferField(
+                                  row.localId,
+                                  "categoria",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full rounded-lg border border-[#333029]/15 bg-white px-2.5 py-2 text-xs font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                            >
+                              {OFERTA_CATEGORIAS.map((cat) => (
+                                <option key={cat} value={cat}>
+                                  {CATEGORY_MAP[cat]?.label ?? cat}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className={`mb-1 block ${MICRO_LABEL}`}>
+                              Validade
+                            </label>
                             <input
                               type="date"
                               value={row.data_fim}
@@ -1121,42 +1139,265 @@ export default function AdminUploadPage() {
                                 )
                               }
                               aria-label={`Validade de ${row.produto_nome || "oferta"}`}
-                              className={`w-36 rounded-xl border bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:ring-2 focus:outline-none ${
+                              className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs font-medium text-brand-dark focus:ring-2 focus:outline-none ${
                                 !row.data_fim
                                   ? "border-red-400 focus:border-red-500 focus:ring-red-200"
-                                  : "border-stone-200/90 focus:border-brand-olive focus:ring-brand-yellow/35"
+                                  : "border-[#333029]/15 focus:border-brand-gold focus:ring-brand-yellow/30"
                               }`}
                             />
-                          </td>
+                          </div>
+                        </div>
 
-                          <td className="px-2.5 py-2.5">
-                            <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-between pt-0.5">
+                          <span className={MICRO_LABEL}>Fidelidade</span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={row.is_clube}
+                            onClick={() =>
+                              updateOfferField(
+                                row.localId,
+                                "is_clube",
+                                !row.is_clube
+                              )
+                            }
+                            className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition-all active:scale-95 ${
+                              row.is_clube
+                                ? "border-brand-gold bg-brand-yellow/20 text-brand-dark"
+                                : "border-[#333029]/15 bg-white text-brand-taupe hover:border-brand-gold"
+                            }`}
+                          >
+                            {row.is_clube && (
+                              <Check className="h-3 w-3 text-brand-olive" aria-hidden="true" />
+                            )}
+                            {row.is_clube ? "Preço Clube" : "Regular"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {/* Tabela completa no desktop (>= md) */}
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[960px] border-collapse text-left text-xs">
+                    <thead>
+                      <tr
+                        className={`border-b border-[#333029]/10 bg-[#F3F1EC] ${MICRO_LABEL}`}
+                      >
+                        <th scope="col" className="px-3 py-3">Produto</th>
+                        <th scope="col" className="px-3 py-3">Marca</th>
+                        <th scope="col" className="px-3 py-3">Peso/Vol.</th>
+                        <th scope="col" className="px-3 py-3">Categoria</th>
+                        <th scope="col" className="px-3 py-3">Normal (R$)</th>
+                        <th scope="col" className="px-3 py-3">Oferta (R$)</th>
+                        <th scope="col" className="px-3 py-3 text-center">Fidelidade</th>
+                        <th scope="col" className="px-3 py-3">Validade</th>
+                        <th scope="col" className="px-3 py-3 text-center">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#333029]/10">
+                      {ofertas.map((row) => {
+                        const hasPriceAlert =
+                          row.preco_oferta <= 0 ||
+                          (row.preco_normal > 0 &&
+                            row.preco_oferta > row.preco_normal);
+
+                        return (
+                          <tr
+                            key={row.localId}
+                            className="transition-colors hover:bg-[#F8F7F4]"
+                          >
+                            <td className="px-2.5 py-2.5">
+                              <input
+                                type="text"
+                                value={row.produto_nome}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "produto_nome",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Ex: Arroz Branco Tipo 1"
+                                className="w-full min-w-[170px] rounded-lg border border-[#333029]/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                              />
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <input
+                                type="text"
+                                value={row.marca}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "marca",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Marca"
+                                className="w-28 rounded-lg border border-[#333029]/15 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                              />
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <input
+                                type="text"
+                                value={row.peso_volume}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "peso_volume",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="5kg"
+                                className="w-20 rounded-lg border border-[#333029]/15 bg-white px-2.5 py-1.5 text-xs text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                              />
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <select
+                                value={resolveCategoryKey(row.categoria)}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "categoria",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-36 rounded-lg border border-[#333029]/15 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none"
+                              >
+                                {OFERTA_CATEGORIAS.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {CATEGORY_MAP[cat]?.label ?? cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={row.preco_normal}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "preco_normal",
+                                    Number.parseFloat(e.target.value) || 0
+                                  )
+                                }
+                                className={`w-22 rounded-lg border border-[#333029]/15 bg-white px-2.5 py-1.5 text-xs text-brand-taupe focus:border-brand-gold focus:ring-2 focus:ring-brand-yellow/30 focus:outline-none ${NUM}`}
+                              />
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={row.preco_oferta}
+                                  onChange={(e) =>
+                                    updateOfferField(
+                                      row.localId,
+                                      "preco_oferta",
+                                      Number.parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  className={`w-22 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-bold text-brand-dark focus:ring-2 focus:outline-none ${NUM} ${
+                                    hasPriceAlert
+                                      ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                                      : "border-[#333029]/15 focus:border-brand-gold focus:ring-brand-yellow/30"
+                                  }`}
+                                />
+                                {hasPriceAlert && (
+                                  <span title="Confira o preço promocional">
+                                    <AlertTriangle
+                                      className="h-3.5 w-3.5 text-red-600"
+                                      aria-hidden="true"
+                                    />
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="px-2.5 py-2.5 text-center">
                               <button
                                 type="button"
-                                onClick={() => duplicateOfferRow(row.localId)}
-                                title="Duplicar linha"
-                                aria-label={`Duplicar ${row.produto_nome || "linha"}`}
-                                className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-stone-200/80 p-1.5 text-brand-taupe transition-colors hover:border-brand-olive hover:bg-brand-yellow/15 hover:text-brand-dark"
+                                role="switch"
+                                aria-checked={row.is_clube}
+                                onClick={() =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "is_clube",
+                                    !row.is_clube
+                                  )
+                                }
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all active:scale-95 ${
+                                  row.is_clube
+                                    ? "border-brand-gold bg-brand-yellow/20 text-brand-dark"
+                                    : "border-[#333029]/15 bg-[#F8F7F4] text-brand-taupe hover:border-brand-gold"
+                                }`}
                               >
-                                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                {row.is_clube && (
+                                  <Check className="h-3 w-3 text-brand-olive" aria-hidden="true" />
+                                )}
+                                {row.is_clube ? "Preço Clube" : "Regular"}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => removeOfferRow(row.localId)}
-                                title="Remover linha"
-                                aria-label={`Remover ${row.produto_nome || "linha"}`}
-                                className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-stone-200/80 p-1.5 text-brand-taupe transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <input
+                                type="date"
+                                value={row.data_fim}
+                                onChange={(e) =>
+                                  updateOfferField(
+                                    row.localId,
+                                    "data_fim",
+                                    e.target.value
+                                  )
+                                }
+                                aria-label={`Validade de ${row.produto_nome || "oferta"}`}
+                                className={`w-36 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-medium text-brand-dark focus:ring-2 focus:outline-none ${
+                                  !row.data_fim
+                                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                                    : "border-[#333029]/15 focus:border-brand-gold focus:ring-brand-yellow/30"
+                                }`}
+                              />
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => duplicateOfferRow(row.localId)}
+                                  title="Duplicar linha"
+                                  aria-label={`Duplicar ${row.produto_nome || "linha"}`}
+                                  className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-[#333029]/15 bg-white p-1.5 text-brand-taupe transition-colors hover:border-brand-gold hover:bg-brand-yellow/15 hover:text-brand-dark"
+                                >
+                                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeOfferRow(row.localId)}
+                                  title="Remover linha"
+                                  aria-label={`Remover ${row.produto_nome || "linha"}`}
+                                  className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-[#333029]/15 bg-white p-1.5 text-brand-taupe transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </section>

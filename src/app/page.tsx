@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowUpRight,
+  Menu,
   Search,
   ShoppingBag,
   Store,
@@ -119,6 +120,7 @@ export default function VitrinePublicaPage() {
   const [selectedRede, setSelectedRede] = useState<string>("todos");
 
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const drawerId = "smart-basket-drawer";
@@ -406,11 +408,11 @@ export default function VitrinePublicaPage() {
   return (
     <div className="flex min-h-screen flex-col text-brand-dark">
       {/* Navbar minimalista */}
-      <header className="sticky top-0 z-50 border-b border-[#333029]/10 bg-[#F8F7F4]/90 py-3.5 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <header className="sticky top-0 z-50 border-b border-[#333029]/10 bg-[#F8F7F4]/90 py-3 backdrop-blur-md sm:py-3.5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6">
           <Link
             href="/"
-            className="shrink-0 font-serif text-2xl font-semibold tracking-tight text-brand-dark"
+            className="shrink-0 font-serif text-xl font-semibold tracking-tight text-brand-dark sm:text-2xl"
             aria-label="CompreMatch — página inicial"
           >
             CompreMatch
@@ -440,29 +442,40 @@ export default function VitrinePublicaPage() {
             </a>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Link
               href={
                 !authLoading && isAuthorizedStaff ? "/admin/upload" : "/login"
               }
-              className="hidden rounded-full border border-[#333029]/30 px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold sm:inline-flex"
+              className="inline-flex shrink-0 items-center justify-center rounded-full border border-[#333029]/30 px-3 py-1.5 text-xs font-medium text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold sm:px-4 sm:text-sm"
             >
-              {!authLoading && isAuthorizedStaff
-                ? "Portal do lojista"
-                : "Login e cadastro"}
+              {!authLoading && isAuthorizedStaff ? (
+                <>
+                  <span className="sm:hidden">Portal</span>
+                  <span className="hidden sm:inline">Portal do lojista</span>
+                </>
+              ) : (
+                <>
+                  <span className="sm:hidden">Entrar</span>
+                  <span className="hidden sm:inline">Login e cadastro</span>
+                </>
+              )}
             </Link>
 
             <button
               id="navbar-cart-btn"
               type="button"
-              onClick={() => setDrawerOpen(true)}
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setDrawerOpen(true);
+              }}
               aria-controls={drawerId}
               aria-expanded={drawerOpen}
               aria-label={`Abrir Sua Cesta Inteligente com ${cartCount} ${cartCount === 1 ? "item" : "itens"}`}
-              className="relative inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand-yellow px-3.5 py-2 text-xs font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-95"
+              className="relative inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-brand-yellow px-3 py-2 text-xs font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-95 sm:gap-2 sm:px-3.5"
             >
               <ShoppingBag className="h-4 w-4" aria-hidden="true" />
-              Cesta
+              <span>Cesta</span>
               {cartCount > 0 && (
                 <span
                   aria-hidden="true"
@@ -472,20 +485,87 @@ export default function VitrinePublicaPage() {
                 </span>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-nav-panel"
+              aria-label={
+                mobileMenuOpen ? "Fechar menu de navegação" : "Abrir menu de navegação"
+              }
+              className="inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#333029]/20 bg-white/70 text-brand-dark transition-colors hover:border-brand-gold md:hidden"
+            >
+              {mobileMenuOpen ? (
+                <X className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Menu className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
           </div>
         </div>
+
+        {mobileMenuOpen && (
+          <nav
+            id="mobile-nav-panel"
+            aria-label="Menu mobile"
+            className="mx-auto mt-3 max-w-6xl border-t border-[#333029]/10 px-4 pt-3 pb-1 md:hidden"
+          >
+            <div className="flex flex-col gap-1">
+              <a
+                href="#como-funciona"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-[#EDEAE3]"
+              >
+                Como funciona
+              </a>
+              <a
+                href="#parcerias"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-[#EDEAE3]"
+              >
+                Parcerias
+              </a>
+              <a
+                href="#sobre"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-[#EDEAE3]"
+              >
+                Sobre
+              </a>
+              <Link
+                href="/rotas"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-[#EDEAE3]"
+              >
+                Ver Roteiro
+              </Link>
+              <Link
+                href={
+                  !authLoading && isAuthorizedStaff ? "/admin/upload" : "/login"
+                }
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 inline-flex items-center justify-center rounded-full border border-[#333029]/25 bg-white px-4 py-2 text-sm font-semibold text-brand-dark transition-colors hover:border-brand-gold"
+              >
+                {!authLoading && isAuthorizedStaff
+                  ? "Portal do lojista"
+                  : "Login e cadastro"}
+              </Link>
+            </div>
+          </nav>
+        )}
       </header>
 
       <main className="flex-1">
         {/* Hero assimétrico em split */}
         <section
           aria-labelledby="hero-title"
-          className="mx-auto grid max-w-6xl items-center gap-8 px-4 pt-10 pb-6 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:pt-14"
+          className="mx-auto grid max-w-6xl items-center gap-8 px-4 pt-8 pb-6 sm:px-6 sm:pt-10 lg:grid-cols-2 lg:gap-12 lg:pt-14"
         >
           <div>
             <h1
               id="hero-title"
-              className="font-serif text-5xl leading-[1.04] font-semibold tracking-tight text-balance text-brand-dark sm:text-6xl"
+              className="font-serif text-[2.5rem] leading-[1.06] font-semibold tracking-tight text-balance text-brand-dark sm:text-5xl lg:text-6xl"
             >
               Economize até 35% no supermercado
             </h1>
@@ -513,7 +593,7 @@ export default function VitrinePublicaPage() {
           </div>
 
           {/* Card editorial com badge flutuante */}
-          <div className="relative">
+          <div className="relative pb-6 lg:pb-0">
             <div
               aria-hidden="true"
               className="grid aspect-[5/4] grid-cols-3 grid-rows-2 gap-px overflow-hidden rounded-[28px] bg-[#333029]/10"
