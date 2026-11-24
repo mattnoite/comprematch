@@ -187,6 +187,42 @@ async function requestLiveQuotaStatus(
 }
 
 const VERCEL_SAFE_PAYLOAD_BYTES = 4 * 1024 * 1024; // 4 MB (margem segura abaixo dos 4,5 MB da Vercel)
+const CLIENT_EXTRACT_TIMEOUT_MS = 65_000;
+
+async function splitPdfIntoPageFiles(file: File): Promise<File[]> {
+  if (file.type !== "application/pdf" || typeof window === "undefined") {
+    return [file];
+  }
+
+  try {
+    const { PDFDocument } = await import("pdf-lib");
+    const buffer = await file.arrayBuffer();
+    const sourcePdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const pageCount = sourcePdf.getPageCount();
+    if (pageCount <= 1) {
+      return [file];
+    }
+
+    const baseName = file.name.replace(/\.pdf$/i, "");
+    const pageFiles: File[] = [];
+    for (let i = 0; i < pageCount; i++) {
+      const singleDoc = await PDFDocument.create();
+      const [copiedPage] = await singleDoc.copyPages(sourcePdf, [i]);
+      singleDoc.addPage(copiedPage);
+      const bytes = await singleDoc.save();
+      pageFiles.push(
+        new File([new Uint8Array(bytes)], `${baseName}-pagina-${i + 1}.pdf`, {
+          type: "application/pdf",
+          lastModified: Date.now(),
+        })
+      );
+    }
+
+    return pageFiles;
+  } catch {
+    return [file];
+  }
+}
 
 async function compressImageForExtraction(file: File): Promise<File> {
   if (file.type === "application/pdf" || typeof window === "undefined") {
@@ -294,6 +330,10 @@ export default function AdminUploadPage() {
 
   const [extracting, setExtracting] = useState<boolean>(false);
   const [extractionStageIdx, setExtractionStageIdx] = useState<number>(0);
+  const [pageProgress, setPageProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [quotaStatus, setQuotaStatus] = useState<ExtractQuotaStatus | null>(null);
   const [lastModelUsed, setLastModelUsed] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -479,129 +519,214 @@ export default function AdminUploadPage() {
     }
 
     setExtractionStageIdx(0);
+    setPageProgress(null);
     setExtracting(true);
     try {
-      const fileToSend = await compressImageForExtraction(selectedFile);
-      const formData = new FormData();
-      formData.append("file", fileToSend);
-      if (mercadoId) {
-        formData.append("mercado_id", mercadoId);
-      }
+      const filesToProcess =
+        selectedFile.type === "application/pdf"
+          ? await splitPdfIntoPageFiles(selectedFile)
+          : [await compressImageForExtraction(selectedFile)];
 
-      const response = await fetch("/api/extract", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
+      const totalPages = filesToProcess.length;
+      const accumulatedOffers: EditableOffer[] = [];
+      let detectedSuggestedId: string | null = null;
+      let detectedMercadoNome: string | null = null;
+      let detectedDataFim: string | null = null;
+      let detectedDataInicio: string | null = null;
 
-      if (response.status === 413) {
-        showToast(
-          "error",
-          "Arquivo grande demais para envio",
-          "Envie um PDF menor que 4 MB ou converta as páginas em imagem (JPG/PNG) para compressão automática."
+      for (let i = 0; i < totalPages; i++) {
+        setPageProgress({ current: i + 1, total: totalPages });
+
+        const formData = new FormData();
+        formData.append("file", filesToProcess[i]);
+        if (mercadoId) {
+          formData.append("mercado_id", mercadoId);
+        }
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(
+          () => controller.abort(),
+          CLIENT_EXTRACT_TIMEOUT_MS
         );
-        return;
-      }
 
-      const payload = (await response
-        .json()
-        .catch(() => ({}))) as Partial<ExtractApiResponse> & {
-        error?: string;
-        code?: string;
-      };
+        let response: Response;
+        try {
+          response = await fetch("/api/extract", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: formData,
+            signal: controller.signal,
+          });
+        } catch (fetchErr) {
+          if (accumulatedOffers.length > 0) {
+            setOfertas(accumulatedOffers);
+          }
+          if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+            showToast(
+              "error",
+              totalPages > 1
+                ? `Tempo esgotado na página ${i + 1} de ${totalPages}`
+                : "Tempo limite excedido na extração",
+              accumulatedOffers.length > 0
+                ? `${accumulatedOffers.length} ofertas das páginas anteriores foram mantidas na lista.`
+                : "A resposta demorou demais. Tente um arquivo menor ou com menos itens por página."
+            );
+            return;
+          }
+          throw fetchErr;
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
 
-      if (!response.ok) {
-        const isQuotaExhausted =
-          response.status === 429 ||
-          response.status === 402 ||
-          payload.code === "CREDITS_EXHAUSTED" ||
-          payload.code === "QUOTA_EXHAUSTED" ||
-          payload.code === "RATE_LIMITED" ||
-          Boolean(payload.quota?.exhausted);
-
-        if (isQuotaExhausted) {
-          const fallbackKind =
-            payload.code === "RATE_LIMITED" ? "minute" : "credits";
-          const nextQuota: ExtractQuotaStatus = payload.quota ?? {
-            exhausted: true,
-            kind: fallbackKind,
-            retryAfterSeconds: fallbackKind === "minute" ? 60 : null,
-            resetAtIso:
-              fallbackKind === "minute"
-                ? new Date(Date.now() + 60 * 1000).toISOString()
-                : null,
-          };
-          setNowMs(Date.now());
-          setQuotaStatus(nextQuota);
-          saveStoredQuota(nextQuota);
+        if (response.status === 413) {
+          if (accumulatedOffers.length > 0) {
+            setOfertas(accumulatedOffers);
+          }
           showToast(
             "error",
-            nextQuota.kind === "minute"
-              ? "Limite por minuto atingido"
-              : "Saldo da API do Claude esgotado",
-            payload.error ??
-              "Veja o aviso na seção de extração para mais detalhes."
+            "Arquivo grande demais para envio",
+            "A página excede o limite de 4,5 MB da Vercel. Envie como imagem (JPG/PNG) para compressão automática."
           );
           return;
         }
 
-        showToast(
-          "error",
-          "Falha na extração com IA",
-          payload.error ?? "Não foi possível processar o encarte."
-        );
-        return;
+        if (response.status === 504) {
+          if (accumulatedOffers.length > 0) {
+            setOfertas(accumulatedOffers);
+          }
+          showToast(
+            "error",
+            totalPages > 1
+              ? `Timeout na página ${i + 1} de ${totalPages}`
+              : "Servidor demorou para responder (504)",
+            accumulatedOffers.length > 0
+              ? `${accumulatedOffers.length} ofertas das páginas anteriores foram mantidas na lista.`
+              : "Tente enviar o encarte como imagem ou PDF menor."
+          );
+          return;
+        }
+
+        const payload = (await response
+          .json()
+          .catch(() => ({}))) as Partial<ExtractApiResponse> & {
+          error?: string;
+          code?: string;
+        };
+
+        if (!response.ok) {
+          if (accumulatedOffers.length > 0) {
+            setOfertas(accumulatedOffers);
+          }
+
+          const isQuotaExhausted =
+            response.status === 429 ||
+            response.status === 402 ||
+            payload.code === "CREDITS_EXHAUSTED" ||
+            payload.code === "QUOTA_EXHAUSTED" ||
+            payload.code === "RATE_LIMITED" ||
+            Boolean(payload.quota?.exhausted);
+
+          if (isQuotaExhausted) {
+            const fallbackKind =
+              payload.code === "RATE_LIMITED" ? "minute" : "credits";
+            const nextQuota: ExtractQuotaStatus = payload.quota ?? {
+              exhausted: true,
+              kind: fallbackKind,
+              retryAfterSeconds: fallbackKind === "minute" ? 60 : null,
+              resetAtIso:
+                fallbackKind === "minute"
+                  ? new Date(Date.now() + 60 * 1000).toISOString()
+                  : null,
+            };
+            setNowMs(Date.now());
+            setQuotaStatus(nextQuota);
+            saveStoredQuota(nextQuota);
+            showToast(
+              "error",
+              nextQuota.kind === "minute"
+                ? "Limite por minuto atingido"
+                : "Saldo da API do Claude esgotado",
+              payload.error ??
+                "Veja o aviso na seção de extração para mais detalhes."
+            );
+            return;
+          }
+
+          showToast(
+            "error",
+            totalPages > 1
+              ? `Falha na página ${i + 1} de ${totalPages}`
+              : "Falha na extração com IA",
+            payload.error ?? "Não foi possível processar o encarte."
+          );
+          return;
+        }
+
+        saveStoredQuota(null);
+        setQuotaStatus(payload.quota ?? null);
+        if (payload.model_label || payload.model_used) {
+          setLastModelUsed(payload.model_label ?? payload.model_used ?? null);
+        }
+
+        if (!detectedSuggestedId && typeof payload.mercado_sugerido_id === "string" && payload.mercado_sugerido_id.trim()) {
+          detectedSuggestedId = payload.mercado_sugerido_id.trim();
+        }
+        if (!detectedMercadoNome && payload.mercado_nome_detectado) {
+          detectedMercadoNome = payload.mercado_nome_detectado;
+        }
+        if (!detectedDataFim && payload.data_fim_sugerida) {
+          detectedDataFim = payload.data_fim_sugerida;
+        }
+        if (!detectedDataInicio && payload.data_inicio_sugerida) {
+          detectedDataInicio = payload.data_inicio_sugerida;
+        }
+
+        const pageOffers = Array.isArray(payload.ofertas) ? payload.ofertas : [];
+        const pageEndFallback =
+          payload.data_fim_sugerida ||
+          detectedDataFim ||
+          dataFim ||
+          getDefaultDataFim();
+
+        for (const item of pageOffers) {
+          accumulatedOffers.push({
+            ...item,
+            data_fim: item.data_fim || pageEndFallback,
+            localId: crypto.randomUUID(),
+          });
+        }
       }
 
-      saveStoredQuota(null);
-      if (payload.quota) {
-        setQuotaStatus(payload.quota);
-      } else {
-        setQuotaStatus(null);
-      }
-      if (payload.model_label || payload.model_used) {
-        setLastModelUsed(payload.model_label ?? payload.model_used ?? null);
-      }
-
-      const extractedList = Array.isArray(payload.ofertas)
-        ? payload.ofertas
-        : [];
-
-      const suggestedId =
-        typeof payload.mercado_sugerido_id === "string" &&
-        payload.mercado_sugerido_id.trim()
-          ? payload.mercado_sugerido_id.trim()
-          : null;
       const currentChains = groupMercadosByChain(mercados);
-      const matchedChain = suggestedId
+      const matchedChain = detectedSuggestedId
         ? currentChains.find(
             (c) =>
-              c.representativeId === suggestedId ||
-              c.branches.some((b) => b.id === suggestedId)
+              c.representativeId === detectedSuggestedId ||
+              c.branches.some((b) => b.id === detectedSuggestedId)
           ) ?? null
         : null;
 
-      setMercadoNomeDetectado(payload.mercado_nome_detectado ?? null);
+      setMercadoNomeDetectado(detectedMercadoNome);
       if (matchedChain) {
         setMercadoId(matchedChain.representativeId);
         setMercadoDetectionStatus("matched");
-      } else {
+      } else if (!mercadoId) {
         setMercadoId("");
         setMercadoDetectionStatus("unmatched");
       }
 
       const resolvedDataFim =
-        payload.data_fim_sugerida || dataFim || getDefaultDataFim();
+        detectedDataFim || dataFim || getDefaultDataFim();
       setDataFim(resolvedDataFim);
       setManualDraft((prev) => ({ ...prev, data_fim: resolvedDataFim }));
 
-      if (payload.data_inicio_sugerida) {
-        setDataInicio(payload.data_inicio_sugerida);
+      if (detectedDataInicio) {
+        setDataInicio(detectedDataInicio);
       }
 
-      if (extractedList.length === 0) {
+      if (accumulatedOffers.length === 0) {
         showToast(
           "error",
           "Nenhuma oferta identificada",
@@ -610,19 +735,15 @@ export default function AdminUploadPage() {
         return;
       }
 
-      setOfertas(
-        extractedList.map((item) => ({
-          ...item,
-          data_fim: item.data_fim || resolvedDataFim,
-          localId: crypto.randomUUID(),
-        }))
-      );
+      setOfertas(accumulatedOffers);
       setEditingLocalId(null);
 
       showToast(
         "success",
-        `${extractedList.length} ofertas extraídas`,
-        "Confira a lista abaixo e clique em Publicar Ofertas."
+        `${accumulatedOffers.length} ofertas extraídas`,
+        totalPages > 1
+          ? `${totalPages} páginas processadas. Confira a lista abaixo e clique em Publicar Ofertas.`
+          : "Confira a lista abaixo e clique em Publicar Ofertas."
       );
     } catch (err) {
       showToast(
@@ -632,6 +753,7 @@ export default function AdminUploadPage() {
       );
     } finally {
       setExtracting(false);
+      setPageProgress(null);
     }
   }
 
@@ -1443,19 +1565,18 @@ export default function AdminUploadPage() {
 
                 {selectedFile && isPdf && selectedFile.size > VERCEL_SAFE_PAYLOAD_BYTES && (
                   <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2.5 text-xs text-brand-dark"
+                    role="status"
+                    className="flex items-start gap-2 rounded-xl border border-brand-gold/40 bg-brand-yellow/10 px-3.5 py-2.5 text-xs text-brand-dark"
                   >
-                    <AlertTriangle
-                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
+                    <FileText
+                      className="mt-0.5 h-4 w-4 shrink-0 text-brand-olive"
                       aria-hidden="true"
                     />
                     <span>
                       Este PDF tem{" "}
                       <strong>{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</strong>.
-                      Em produção na Vercel, arquivos acima de 4,5 MB podem ser
-                      recusados — prefira dividir o PDF ou enviar como imagem
-                      (comprimida automaticamente).
+                      PDFs com múltiplas páginas são divididos e lidos página a
+                      página automaticamente para evitar timeouts.
                     </span>
                   </div>
                 )}
@@ -1479,7 +1600,9 @@ export default function AdminUploadPage() {
                         className="h-4 w-4 animate-spin"
                         aria-hidden="true"
                       />
-                      Analisando catálogo…
+                      {pageProgress && pageProgress.total > 1
+                        ? `Extraindo página ${pageProgress.current} de ${pageProgress.total}…`
+                        : "Analisando catálogo…"}
                     </>
                   ) : quotaStatus?.exhausted &&
                     quotaStatus.kind === "minute" &&
@@ -1519,7 +1642,9 @@ export default function AdminUploadPage() {
                   >
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-bold text-brand-dark">
-                        Processamento IA em andamento
+                        {pageProgress && pageProgress.total > 1
+                          ? `Processando página ${pageProgress.current} de ${pageProgress.total}`
+                          : "Processamento IA em andamento"}
                       </span>
                       <Loader2
                         className="h-3.5 w-3.5 animate-spin text-brand-gold"
@@ -1527,11 +1652,23 @@ export default function AdminUploadPage() {
                       />
                     </div>
                     <progress
+                      value={
+                        pageProgress && pageProgress.total > 1
+                          ? pageProgress.current
+                          : undefined
+                      }
+                      max={
+                        pageProgress && pageProgress.total > 1
+                          ? pageProgress.total
+                          : undefined
+                      }
                       className="brand-progress block w-full"
                       aria-label="Extraindo ofertas do encarte com inteligência artificial"
                     />
                     <p className="text-[11px] font-medium text-brand-taupe">
-                      {EXTRACTION_STAGES[extractionStageIdx]}
+                      {pageProgress && pageProgress.total > 1
+                        ? `Extraindo ofertas da página ${pageProgress.current} de ${pageProgress.total}…`
+                        : EXTRACTION_STAGES[extractionStageIdx]}
                     </p>
                   </div>
                 )}

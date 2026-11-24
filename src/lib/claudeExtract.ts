@@ -5,7 +5,8 @@ export const CLAUDE_HAIKU_LABEL = "Claude Haiku 5.5";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const MAX_OUTPUT_TOKENS = 16384;
+const MAX_OUTPUT_TOKENS = 32768;
+const REQUEST_TIMEOUT_MS = 55_000;
 
 type ClaudeMediaMime =
   | "image/jpeg"
@@ -138,32 +139,49 @@ export async function extractFlyerWithClaudeHaiku<T>(params: {
   modelLabel: string;
   quota: ExtractQuotaStatus;
 }> {
-  const response = await fetch(ANTHROPIC_MESSAGES_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": params.apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_HAIKU_MODEL,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system:
-        "Você é um extrator rigoroso de dados de encartes de supermercados brasileiros. Responda EXCLUSIVAMENTE com um objeto JSON válido seguindo exatamente o schema solicitado, sem texto introdutório, explicações ou blocos markdown.",
-      messages: [
-        {
-          role: "user",
-          content: [
-            buildMediaContentBlock(params.mimeType, params.base64Data),
-            {
-              type: "text",
-              text: params.prompt,
-            },
-          ],
-        },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(ANTHROPIC_MESSAGES_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": params.apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "content-type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: CLAUDE_HAIKU_MODEL,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        thinking: { type: "disabled" },
+        system:
+          "Você é um extrator rigoroso de dados de encartes de supermercados brasileiros. Responda EXCLUSIVAMENTE com um objeto JSON válido seguindo exatamente o schema solicitado, sem texto introdutório, explicações ou blocos markdown.",
+        messages: [
+          {
+            role: "user",
+            content: [
+              buildMediaContentBlock(params.mimeType, params.base64Data),
+              {
+                type: "text",
+                text: params.prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(
+        "A leitura do encarte pela IA atingiu o tempo limite. Tente dividir em páginas menores."
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const payload = (await response
     .json()
