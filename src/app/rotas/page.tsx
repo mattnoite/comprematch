@@ -242,8 +242,8 @@ export default function RotasPage() {
     () =>
       todayIso
         ? items.filter((item) =>
-            Boolean(item.data_fim && item.data_fim < todayIso)
-          ).length
+          Boolean(item.data_fim && item.data_fim < todayIso)
+        ).length
         : 0,
     [items, todayIso]
   );

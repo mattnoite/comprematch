@@ -53,7 +53,7 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
     () =>
       todayIso
         ? items.filter((it) => Boolean(it.data_fim && it.data_fim < todayIso))
-            .length
+          .length
         : 0,
     [items, todayIso]
   );
