@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   OFERTA_CATEGORIAS,
@@ -13,6 +12,16 @@ import {
   getSaoPauloOffsetIso,
   getSaoPauloTodayIso,
 } from "@/lib/date";
+import {
+  CLAUDE_HAIKU_LABEL,
+  CLAUDE_HAIKU_MODEL,
+  ClaudeQuotaError,
+  extractFlyerWithClaudeHaiku,
+  getClaudeQuotaStatus,
+  parseClaudeJsonResponse,
+} from "@/lib/claudeExtract";
+
+export const maxDuration = 60;
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -22,49 +31,13 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
 ]);
 
+type SupportedClaudeMime =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp"
+  | "application/pdf";
+
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
-
-const GEMINI_MODEL_CANDIDATES: ReadonlyArray<{
-  model: string;
-  apiVersion: "v1" | "v1beta";
-}> = [
-    { model: "gemini-2.5-flash", apiVersion: "v1beta" },
-    { model: "gemini-2.0-flash", apiVersion: "v1beta" },
-    { model: "gemini-flash-latest", apiVersion: "v1beta" },
-    { model: "gemini-flash-lite-latest", apiVersion: "v1beta" },
-  ];
-
-async function generateWithGeminiFallback(
-  genAI: GoogleGenerativeAI,
-  parts: Parameters<ReturnType<GoogleGenerativeAI["getGenerativeModel"]>["generateContent"]>[0],
-  generationConfig: { responseMimeType: string; temperature: number }
-): Promise<string> {
-  let lastError: unknown;
-
-  for (const candidate of GEMINI_MODEL_CANDIDATES) {
-    try {
-      const model = genAI.getGenerativeModel(
-        {
-          model: candidate.model,
-          generationConfig,
-        },
-        { apiVersion: candidate.apiVersion }
-      );
-      const result = await model.generateContent(parts);
-      return result.response.text();
-    } catch (err) {
-      lastError = err;
-      console.warn(
-        `Falha com ${candidate.model} (${candidate.apiVersion}), tentando próximo fallback:`,
-        err
-      );
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Nenhum modelo Gemini disponível respondeu com sucesso.");
-}
 
 function getTodayIso(): string {
   return getSaoPauloTodayIso();
@@ -295,6 +268,31 @@ async function authorizeStaffRequest(
   return { ok: true, status: 200, supabase };
 }
 
+export async function GET(request: NextRequest) {
+  const authCheck = await authorizeStaffRequest(request);
+  if (!authCheck.ok) {
+    return NextResponse.json(
+      { error: authCheck.error },
+      { status: authCheck.status }
+    );
+  }
+
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const configured = Boolean(
+    anthropicApiKey && anthropicApiKey !== "your-anthropic-api-key"
+  );
+
+  return NextResponse.json(
+    {
+      configured,
+      model_used: CLAUDE_HAIKU_MODEL,
+      model_label: CLAUDE_HAIKU_LABEL,
+      quota: getClaudeQuotaStatus(),
+    },
+    { status: 200 }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authCheck = await authorizeStaffRequest(request);
@@ -305,12 +303,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey || geminiApiKey === "your-gemini-api-key") {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey || anthropicApiKey === "your-anthropic-api-key") {
       return NextResponse.json(
         {
           error:
-            "GEMINI_API_KEY não configurada no servidor (.env.local).",
+            "ANTHROPIC_API_KEY não configurada no servidor (.env.local).",
         },
         { status: 500 }
       );
@@ -382,7 +380,6 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const base64Data = buffer.toString("base64");
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
     const todayIso = getTodayIso();
     const currentYear = getSaoPauloCurrentYear();
     const defaultEndIso = getDefaultEndDate();
@@ -435,63 +432,21 @@ Schema JSON esperado:
   ]
 }`;
 
-    const parts = [
+    const extractionResult = await extractFlyerWithClaudeHaiku({
+      apiKey: anthropicApiKey,
       prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: normalizedMime,
-        },
-      },
-    ];
+      mimeType: normalizedMime as SupportedClaudeMime,
+      base64Data,
+      parseResponse: parseClaudeJsonResponse,
+    });
 
-    const generationConfig = {
-      responseMimeType: "application/json",
-      temperature: 0.1,
-    };
-
-    const rawText = await generateWithGeminiFallback(
-      genAI,
-      parts,
-      generationConfig
+    const payload = sanitizeExtractedPayload(
+      extractionResult.parsed,
+      validMercadoIds
     );
-
-    const cleanedJson = rawText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/```\s*$/i, "")
-      .trim();
-
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(cleanedJson);
-    } catch {
-      const startIdx = cleanedJson.indexOf("{");
-      const endIdx = cleanedJson.lastIndexOf("}");
-      if (startIdx >= 0 && endIdx > startIdx) {
-        try {
-          parsedJson = JSON.parse(cleanedJson.slice(startIdx, endIdx + 1));
-        } catch {
-          return NextResponse.json(
-            {
-              error:
-                "A IA retornou uma resposta incompleta ou fora do formato esperado. Tente enviar uma imagem mais nítida.",
-            },
-            { status: 502 }
-          );
-        }
-      } else {
-        return NextResponse.json(
-          {
-            error:
-              "A IA retornou uma resposta inválida para este encarte. Tente novamente.",
-          },
-          { status: 502 }
-        );
-      }
-    }
-
-    const payload = sanitizeExtractedPayload(parsedJson, validMercadoIds);
+    payload.model_used = extractionResult.modelUsed;
+    payload.model_label = extractionResult.modelLabel;
+    payload.quota = extractionResult.quota;
 
     if (payload.mercado_sugerido_id) {
       payload.mercado_sugerido_id =
@@ -515,6 +470,24 @@ Schema JSON esperado:
 
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
+    if (err instanceof ClaudeQuotaError) {
+      console.warn("Limite/saldo da API do Claude atingido:", err.quota);
+      return NextResponse.json(
+        {
+          error: err.message,
+          code:
+            err.quota.kind === "minute" ? "RATE_LIMITED" : "CREDITS_EXHAUSTED",
+          quota: err.quota,
+        },
+        {
+          status: err.status,
+          headers: err.quota.retryAfterSeconds
+            ? { "Retry-After": String(err.quota.retryAfterSeconds) }
+            : undefined,
+        }
+      );
+    }
+
     console.error("Erro na rota /api/extract:", err);
     return NextResponse.json(
       {

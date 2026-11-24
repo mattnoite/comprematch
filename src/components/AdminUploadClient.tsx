@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Calendar,
   Check,
+  Clock,
   Copy,
   Database,
   FileText,
@@ -21,6 +22,7 @@ import {
   Pencil,
   PencilLine,
   Plus,
+  RefreshCw,
   Sparkles,
   Store,
   Tag,
@@ -37,6 +39,7 @@ import { getSaoPauloOffsetIso, getSaoPauloTodayIso } from "@/lib/date";
 import {
   OFERTA_CATEGORIAS,
   type ExtractApiResponse,
+  type ExtractQuotaStatus,
   type ExtractedOffer,
   type Mercado,
 } from "@/types/database";
@@ -112,6 +115,149 @@ const ACCEPTED_TYPES = new Set([
   "application/pdf",
 ]);
 
+const QUOTA_STORAGE_KEY = "comprematch:extract-quota-v1";
+
+function readStoredQuota(): ExtractQuotaStatus | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(QUOTA_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ExtractQuotaStatus;
+    if (!parsed || typeof parsed !== "object" || !parsed.exhausted) {
+      window.localStorage.removeItem(QUOTA_STORAGE_KEY);
+      return null;
+    }
+    if (parsed.resetAtIso) {
+      const resetMs = Date.parse(parsed.resetAtIso);
+      if (Number.isFinite(resetMs) && Date.now() >= resetMs) {
+        window.localStorage.removeItem(QUOTA_STORAGE_KEY);
+        return null;
+      }
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredQuota(quota: ExtractQuotaStatus | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (quota && quota.exhausted) {
+      window.localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify(quota));
+    } else {
+      window.localStorage.removeItem(QUOTA_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+async function requestLiveQuotaStatus(
+  accessToken: string | undefined
+): Promise<ExtractQuotaStatus | null> {
+  const stored = readStoredQuota();
+  if (!accessToken) {
+    return stored;
+  }
+
+  try {
+    const res = await fetch("/api/extract", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      return stored;
+    }
+    const data = (await res.json()) as { quota?: ExtractQuotaStatus };
+    if (data.quota?.exhausted) {
+      saveStoredQuota(data.quota);
+      return data.quota;
+    }
+    if (stored && stored.exhausted) {
+      // Mantém aviso local se ainda estiver dentro da janela de reset (ex.: cold start serverless)
+      return stored;
+    }
+    return data.quota ?? null;
+  } catch {
+    return stored;
+  }
+}
+
+const VERCEL_SAFE_PAYLOAD_BYTES = 4 * 1024 * 1024; // 4 MB (margem segura abaixo dos 4,5 MB da Vercel)
+
+async function compressImageForExtraction(file: File): Promise<File> {
+  if (file.type === "application/pdf" || typeof window === "undefined") {
+    return file;
+  }
+
+  // Imagens pequenas já estão abaixo da margem de segurança e não precisam reencodar
+  if (file.size <= 1.8 * 1024 * 1024) {
+    return file;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Falha ao carregar imagem para compressão."));
+      el.src = objectUrl;
+    });
+
+    const presets = [
+      { maxDim: 2048, quality: 0.85 },
+      { maxDim: 1600, quality: 0.74 },
+    ] as const;
+
+    let bestFile = file;
+
+    for (const preset of presets) {
+      const scale = Math.min(
+        1,
+        preset.maxDim / Math.max(img.naturalWidth || 1, img.naturalHeight || 1)
+      );
+      const width = Math.max(1, Math.round(img.naturalWidth * scale));
+      const height = Math.max(1, Math.round(img.naturalHeight * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) break;
+
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", preset.quality)
+      );
+      if (!blob) continue;
+
+      if (blob.size < bestFile.size) {
+        const baseName = file.name.replace(/\.[^.]+$/, "");
+        bestFile = new File([blob], `${baseName}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        });
+      }
+
+      if (bestFile.size <= 3.5 * 1024 * 1024) {
+        break;
+      }
+    }
+
+    return bestFile;
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 const EXTRACTION_STAGES = [
   "Lendo layout e validade do encarte...",
   "Identificando rede do supermercado...",
@@ -148,6 +294,9 @@ export default function AdminUploadPage() {
 
   const [extracting, setExtracting] = useState<boolean>(false);
   const [extractionStageIdx, setExtractionStageIdx] = useState<number>(0);
+  const [quotaStatus, setQuotaStatus] = useState<ExtractQuotaStatus | null>(null);
+  const [lastModelUsed, setLastModelUsed] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [saving, setSaving] = useState<boolean>(false);
   const [ofertas, setOfertas] = useState<EditableOffer[]>([]);
   const [editingLocalId, setEditingLocalId] = useState<string | null>(null);
@@ -157,6 +306,8 @@ export default function AdminUploadPage() {
   }>({ normal: "", oferta: "" });
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
+  const accessToken = session?.access_token;
+
   useEffect(() => {
     if (!extracting) return;
     const interval = window.setInterval(() => {
@@ -164,6 +315,52 @@ export default function AdminUploadPage() {
     }, 2200);
     return () => window.clearInterval(interval);
   }, [extracting]);
+
+  useEffect(() => {
+    let active = true;
+    void requestLiveQuotaStatus(accessToken).then((resolved) => {
+      if (!active || !resolved) return;
+      setNowMs(Date.now());
+      setQuotaStatus(resolved);
+    });
+    return () => {
+      active = false;
+    };
+  }, [accessToken]);
+
+  const minuteResetMs =
+    quotaStatus?.exhausted &&
+    quotaStatus.kind === "minute" &&
+    quotaStatus.resetAtIso
+      ? Date.parse(quotaStatus.resetAtIso)
+      : NaN;
+
+  const cooldownRemainingSec = Number.isFinite(minuteResetMs)
+    ? Math.max(0, Math.ceil((minuteResetMs - nowMs) / 1000))
+    : 0;
+
+  useEffect(() => {
+    if (!Number.isFinite(minuteResetMs)) return;
+
+    let active = true;
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNowMs(current);
+      if (current >= minuteResetMs) {
+        window.clearInterval(timer);
+        saveStoredQuota(null);
+        void requestLiveQuotaStatus(accessToken).then((resolved) => {
+          if (!active) return;
+          setQuotaStatus(resolved);
+        });
+      }
+    }, 1000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [minuteResetMs, accessToken]);
 
   const showToast = useCallback(
     (type: ToastMessage["type"], title: string, description?: string) => {
@@ -284,8 +481,9 @@ export default function AdminUploadPage() {
     setExtractionStageIdx(0);
     setExtracting(true);
     try {
+      const fileToSend = await compressImageForExtraction(selectedFile);
       const formData = new FormData();
-      formData.append("file", selectedFile);
+      formData.append("file", fileToSend);
       if (mercadoId) {
         formData.append("mercado_id", mercadoId);
       }
@@ -298,17 +496,73 @@ export default function AdminUploadPage() {
         body: formData,
       });
 
-      const payload = (await response.json()) as Partial<ExtractApiResponse> & {
+      if (response.status === 413) {
+        showToast(
+          "error",
+          "Arquivo grande demais para envio",
+          "Envie um PDF menor que 4 MB ou converta as páginas em imagem (JPG/PNG) para compressão automática."
+        );
+        return;
+      }
+
+      const payload = (await response
+        .json()
+        .catch(() => ({}))) as Partial<ExtractApiResponse> & {
         error?: string;
+        code?: string;
       };
 
       if (!response.ok) {
+        const isQuotaExhausted =
+          response.status === 429 ||
+          response.status === 402 ||
+          payload.code === "CREDITS_EXHAUSTED" ||
+          payload.code === "QUOTA_EXHAUSTED" ||
+          payload.code === "RATE_LIMITED" ||
+          Boolean(payload.quota?.exhausted);
+
+        if (isQuotaExhausted) {
+          const fallbackKind =
+            payload.code === "RATE_LIMITED" ? "minute" : "credits";
+          const nextQuota: ExtractQuotaStatus = payload.quota ?? {
+            exhausted: true,
+            kind: fallbackKind,
+            retryAfterSeconds: fallbackKind === "minute" ? 60 : null,
+            resetAtIso:
+              fallbackKind === "minute"
+                ? new Date(Date.now() + 60 * 1000).toISOString()
+                : null,
+          };
+          setNowMs(Date.now());
+          setQuotaStatus(nextQuota);
+          saveStoredQuota(nextQuota);
+          showToast(
+            "error",
+            nextQuota.kind === "minute"
+              ? "Limite por minuto atingido"
+              : "Saldo da API do Claude esgotado",
+            payload.error ??
+              "Veja o aviso na seção de extração para mais detalhes."
+          );
+          return;
+        }
+
         showToast(
           "error",
           "Falha na extração com IA",
           payload.error ?? "Não foi possível processar o encarte."
         );
         return;
+      }
+
+      saveStoredQuota(null);
+      if (payload.quota) {
+        setQuotaStatus(payload.quota);
+      } else {
+        setQuotaStatus(null);
+      }
+      if (payload.model_label || payload.model_used) {
+        setLastModelUsed(payload.model_label ?? payload.model_used ?? null);
       }
 
       const extractedList = Array.isArray(payload.ofertas)
@@ -987,6 +1241,122 @@ export default function AdminUploadPage() {
             aria-labelledby="tab-ai-mode"
             className="p-5"
           >
+            {quotaStatus?.exhausted && (
+              <div
+                id="ai-quota-exhausted-banner"
+                role="alert"
+                className={`mb-5 rounded-2xl border p-4 text-brand-dark ${
+                  quotaStatus.kind === "credits"
+                    ? "border-amber-400/70 bg-amber-50/90"
+                    : "border-brand-gold/60 bg-brand-yellow/15"
+                }`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                        quotaStatus.kind === "credits"
+                          ? "bg-amber-200/70 text-amber-950"
+                          : "bg-brand-yellow/40 text-brand-dark"
+                      }`}
+                    >
+                      {quotaStatus.kind === "credits" ? (
+                        <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                      ) : (
+                        <Clock className="h-5 w-5" aria-hidden="true" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                            quotaStatus.kind === "credits"
+                              ? "bg-amber-200/80 text-amber-950"
+                              : "bg-brand-dark text-brand-yellow"
+                          }`}
+                        >
+                          {quotaStatus.kind === "credits"
+                            ? "Créditos da API esgotados"
+                            : "Limite temporário por minuto"}
+                        </span>
+                      </div>
+
+                      <h3 className="font-serif text-lg font-semibold tracking-tight text-brand-dark">
+                        {quotaStatus.kind === "credits"
+                          ? "Saldo insuficiente na API do Claude"
+                          : `Pausa curta na extração por IA${
+                              cooldownRemainingSec > 0
+                                ? ` · aguarde ${cooldownRemainingSec}s`
+                                : ""
+                            }`}
+                      </h3>
+
+                      <p className="text-xs leading-relaxed text-brand-dark/80">
+                        {quotaStatus.kind === "credits" ? (
+                          <>
+                            Os créditos da sua conta Anthropic para o{" "}
+                            <strong className="text-brand-dark">
+                              Claude Haiku 5.5
+                            </strong>{" "}
+                            acabaram ou atingiram o limite de gasto configurado em{" "}
+                            <strong className="text-brand-dark">
+                              platform.claude.com
+                            </strong>
+                            . Enquanto recarrega, você pode continuar
+                            cadastrando ofertas normalmente pela aba{" "}
+                            <strong className="text-brand-dark">
+                              Cadastro Manual
+                            </strong>
+                            .
+                          </>
+                        ) : (
+                          <>
+                            O Claude Haiku atingiu o limite temporário de
+                            requisições por minuto. Aguarde alguns segundos para
+                            extrair novamente.
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3.5 flex flex-wrap items-center gap-2 sm:pl-12">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("manual");
+                      window.setTimeout(() => {
+                        manualNameInputRef.current?.focus();
+                      }, 0);
+                    }}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#333029] px-3.5 py-2 text-xs font-bold text-brand-yellow transition-colors hover:bg-[#333029]/90"
+                  >
+                    <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+                    Ir para Cadastro Manual
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveStoredQuota(null);
+                      setQuotaStatus(null);
+                      void requestLiveQuotaStatus(accessToken).then(
+                        (resolved) => {
+                          setNowMs(Date.now());
+                          setQuotaStatus(resolved);
+                        }
+                      );
+                    }}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#333029]/20 bg-white px-3.5 py-2 text-xs font-semibold text-brand-dark transition-colors hover:border-brand-gold"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Verificar disponibilidade novamente
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-5 lg:grid-cols-12">
               <div className="space-y-4 lg:col-span-6">
                 <div
@@ -1071,11 +1441,36 @@ export default function AdminUploadPage() {
                   </div>
                 )}
 
+                {selectedFile && isPdf && selectedFile.size > VERCEL_SAFE_PAYLOAD_BYTES && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2.5 text-xs text-brand-dark"
+                  >
+                    <AlertTriangle
+                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Este PDF tem{" "}
+                      <strong>{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</strong>.
+                      Em produção na Vercel, arquivos acima de 4,5 MB podem ser
+                      recusados — prefira dividir o PDF ou enviar como imagem
+                      (comprimida automaticamente).
+                    </span>
+                  </div>
+                )}
+
                 <button
                   id="extract-ai-btn"
                   type="button"
                   onClick={() => void handleExtractWithAI()}
-                  disabled={extracting || !selectedFile}
+                  disabled={
+                    extracting ||
+                    !selectedFile ||
+                    (quotaStatus?.exhausted &&
+                      quotaStatus.kind === "minute" &&
+                      cooldownRemainingSec > 0)
+                  }
                   className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-yellow px-5 py-3 text-sm font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {extracting ? (
@@ -1086,6 +1481,13 @@ export default function AdminUploadPage() {
                       />
                       Analisando catálogo…
                     </>
+                  ) : quotaStatus?.exhausted &&
+                    quotaStatus.kind === "minute" &&
+                    cooldownRemainingSec > 0 ? (
+                    <>
+                      <Clock className="h-4 w-4" aria-hidden="true" />
+                      Aguarde {cooldownRemainingSec}s para extrair novamente
+                    </>
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -1093,6 +1495,21 @@ export default function AdminUploadPage() {
                     </>
                   )}
                 </button>
+
+                {!extracting && (!quotaStatus || !quotaStatus.exhausted) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#333029]/10 bg-[#F8F7F4] px-3.5 py-2 text-[11px] text-brand-taupe">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-brand-dark">
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-2 rounded-full bg-emerald-600"
+                      />
+                      Motor IA: {lastModelUsed ?? "Claude Haiku 5.5"}
+                    </span>
+                    <span className="font-semibold text-brand-taupe">
+                      Modelo econômico ativo
+                    </span>
+                  </div>
+                )}
 
                 {extracting && (
                   <div

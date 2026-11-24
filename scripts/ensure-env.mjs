@@ -23,10 +23,10 @@ if (fs.existsSync(envLocalPath)) {
   if (
     content.includes("your-project-id") ||
     content.includes("your-supabase-anon-key") ||
-    content.includes("your-gemini-api-key")
+    content.includes("your-anthropic-api-key")
   ) {
     console.warn(
-      "[CompreMatch] Aviso: preencha as variáveis reais no arquivo .env.local antes de testar Supabase e Gemini."
+      "[CompreMatch] Aviso: preencha as variáveis reais no arquivo .env.local antes de testar Supabase e Claude."
     );
   }
 }

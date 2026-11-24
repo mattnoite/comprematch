@@ -33,7 +33,7 @@ export function Toast({ toast, onClose }: ToastProps) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed right-5 bottom-5 z-50 w-full max-w-sm"
+      className="fixed inset-x-4 bottom-4 z-50 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-full sm:max-w-sm"
     >
       <div
         className={`flex items-start gap-3 rounded-xl border p-4 shadow-md ${

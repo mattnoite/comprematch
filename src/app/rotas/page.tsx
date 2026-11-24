@@ -878,13 +878,16 @@ export default function RotasPage() {
               </h1>
 
               {/* KPIs */}
-              <section aria-label="Indicadores da rota" className="grid grid-cols-3 gap-2.5">
+              <section
+                aria-label="Indicadores da rota"
+                className="grid grid-cols-2 gap-2.5 sm:grid-cols-3"
+              >
                 <div className="rounded-2xl border border-[#333029]/10 bg-white p-3">
                   <p className="flex items-center gap-1.5 text-[11px] font-medium text-brand-taupe">
-                    <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Navigation className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Distância:
                   </p>
-                  <p className={`mt-1 text-lg font-black text-brand-dark ${NUM}`}>
+                  <p className={`mt-1 text-base font-black text-brand-dark sm:text-lg ${NUM}`}>
                     {totalDistanceMeters !== null
                       ? formatDistanceKm(totalDistanceMeters)
                       : "—"}
@@ -892,21 +895,21 @@ export default function RotasPage() {
                 </div>
                 <div className="rounded-2xl border border-[#333029]/10 bg-white p-3">
                   <p className="flex items-center gap-1.5 text-[11px] font-medium text-brand-taupe">
-                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Tempo:
                   </p>
-                  <p className={`mt-1 text-lg font-black text-brand-dark ${NUM}`}>
+                  <p className={`mt-1 text-base font-black text-brand-dark sm:text-lg ${NUM}`}>
                     {totalDurationSeconds !== null
                       ? formatDuration(totalDurationSeconds)
                       : "—"}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-brand-gold/40 bg-white p-3">
+                <div className="col-span-2 rounded-2xl border border-brand-gold/40 bg-white p-3 sm:col-span-1">
                   <p className="flex items-center gap-1.5 text-[11px] font-medium text-brand-olive">
-                    <CircleDollarSign className="h-3.5 w-3.5" aria-hidden="true" />
+                    <CircleDollarSign className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Economia Líquida:
                   </p>
-                  <p className={`mt-1 text-lg font-black text-brand-olive ${NUM}`}>
+                  <p className={`mt-1 text-base font-black text-brand-olive sm:text-lg ${NUM}`}>
                     {formatBRL(economiaLiquida)}
                   </p>
                 </div>

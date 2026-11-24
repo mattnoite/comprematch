@@ -71,10 +71,20 @@ export interface ExtractedOffer {
   data_fim: string;
 }
 
+export interface ExtractQuotaStatus {
+  exhausted: boolean;
+  kind: "none" | "minute" | "credits";
+  retryAfterSeconds: number | null;
+  resetAtIso: string | null;
+}
+
 export interface ExtractApiResponse {
   mercado_sugerido_id: string | null;
   mercado_nome_detectado: string | null;
   data_inicio_sugerida: string;
   data_fim_sugerida: string;
   ofertas: ExtractedOffer[];
+  model_used?: string;
+  model_label?: string;
+  quota?: ExtractQuotaStatus;
 }

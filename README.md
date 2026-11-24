@@ -1,6 +1,6 @@
 # CompreMatch
 
-Plataforma inteligente de descoberta e correspondência de ofertas locais com **Next.js (App Router)**, **TypeScript**, **Tailwind CSS**, **Leaflet**, **Supabase** e **Google Gemini**.
+Plataforma inteligente de descoberta e correspondência de ofertas locais com **Next.js (App Router)**, **TypeScript**, **Tailwind CSS**, **Leaflet**, **Supabase** e **Anthropic Claude**.
 
 ## Pré-requisitos na sua máquina
 
@@ -32,7 +32,7 @@ Depois, confira as chaves em `.env.local`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-GEMINI_API_KEY=...
+ANTHROPIC_API_KEY=...
 ```
 
 > Caso ainda não tenha acessado o painel no navegador, abra a URL local exibida pelo Next.js no terminal (`http://localhost:3000`).
@@ -47,7 +47,7 @@ GEMINI_API_KEY=...
    WHERE email = 'seu@email.com';
    ```
 3. Faça login em `/login` com esse e-mail:
-   - `/admin/upload`: envio de encarte (JPG, PNG, PDF), extração automática com Gemini (`/api/extract`), revisão em tabela e salvamento em lote no Supabase.
+   - `/admin/upload`: envio de encarte (JPG, PNG, PDF), extração automática com Claude Haiku (`/api/extract`), revisão em tabela e salvamento em lote no Supabase.
    - `/admin/usuarios`: gestão de permissões (`consumidor`, `colaborador`, `admin`) na tabela `perfis`.
 
 ## Scripts disponíveis
