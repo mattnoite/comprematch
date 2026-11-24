@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -15,9 +16,11 @@ import type { Perfil, UserRole } from "@/types/database";
 
 interface AuthActionResult {
   error: string | null;
+  profile?: Perfil | null;
 }
 
-interface SignUpResult extends AuthActionResult {
+interface SignUpResult {
+  error: string | null;
   needsEmailConfirmation: boolean;
 }
 
@@ -46,9 +49,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState<boolean>(configured);
 
+  const fetchSeqRef = useRef(0);
+  const loadedUserIdRef = useRef<string | null>(null);
+
   const fetchPerfil = useCallback(
     async (targetUser: User | null): Promise<Perfil | null> => {
+      const seq = ++fetchSeqRef.current;
+
       if (!targetUser || !configured) {
+        loadedUserIdRef.current = null;
         setProfile(null);
         return null;
       }
@@ -61,23 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq("id", targetUser.id)
           .maybeSingle();
 
-        if (error) {
-          console.error("Erro ao carregar perfil:", error.message);
-          const fallback: Perfil = {
-            id: targetUser.id,
-            email: targetUser.email ?? "",
-            role: "consumidor",
-          };
-          setProfile(fallback);
-          return fallback;
-        }
+        // Ignora resposta antiga se uma requisição mais recente já foi iniciada
+        if (seq !== fetchSeqRef.current) return null;
 
-        if (!data) {
+        if (error || !data) {
+          if (error) {
+            console.error("Erro ao carregar perfil:", error.message);
+          }
           const fallback: Perfil = {
             id: targetUser.id,
             email: targetUser.email ?? "",
             role: "consumidor",
           };
+          loadedUserIdRef.current = targetUser.id;
           setProfile(fallback);
           return fallback;
         }
@@ -88,10 +93,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: (data.role as UserRole) ?? "consumidor",
           created_at: data.created_at ?? null,
         };
+        loadedUserIdRef.current = targetUser.id;
         setProfile(resolved);
         return resolved;
       } catch (err) {
+        if (seq !== fetchSeqRef.current) return null;
         console.error("Falha inesperada ao buscar perfil:", err);
+        loadedUserIdRef.current = null;
         setProfile(null);
         return null;
       }
@@ -121,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (initialSession?.user) {
           await fetchPerfil(initialSession.user);
         } else {
+          loadedUserIdRef.current = null;
           setProfile(null);
         }
       } finally {
@@ -134,20 +143,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
 
-      if (nextSession?.user) {
-        setLoading(true);
-        void fetchPerfil(nextSession.user).finally(() => {
-          if (mounted) setLoading(false);
-        });
-      } else {
+      if (!nextSession?.user) {
+        loadedUserIdRef.current = null;
         setProfile(null);
         setLoading(false);
+        return;
       }
+
+      // Evita refetch/flash redundante quando o perfil desse usuário já está carregado (ex.: TOKEN_REFRESHED ou signIn direto)
+      if (
+        event === "TOKEN_REFRESHED" ||
+        (event === "SIGNED_IN" &&
+          loadedUserIdRef.current === nextSession.user.id)
+      ) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      void fetchPerfil(nextSession.user).finally(() => {
+        if (mounted) setLoading(false);
+      });
     });
 
     return () => {
@@ -162,6 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           error:
             "Configuração do Supabase ausente. Defina NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+          profile: null,
         };
       }
 
@@ -172,14 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        return { error: error.message };
+        return { error: error.message, profile: null };
       }
 
       setSession(data.session);
       setUser(data.user);
-      await fetchPerfil(data.user);
+      const resolvedProfile = await fetchPerfil(data.user);
+      setLoading(false);
 
-      return { error: null };
+      return { error: null, profile: resolvedProfile };
     },
     [configured, fetchPerfil]
   );
@@ -212,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
 
         // Garante criação do perfil padrão como 'consumidor' caso não haja trigger no banco
-        await supabase.from("perfis").upsert(
+        const { error: upsertError } = await supabase.from("perfis").upsert(
           {
             id: data.user.id,
             email: data.user.email ?? normalizedEmail,
@@ -220,6 +243,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
           { onConflict: "id", ignoreDuplicates: true }
         );
+
+        if (upsertError) {
+          console.warn(
+            "Aviso ao garantir perfil padrão no cadastro:",
+            upsertError.message
+          );
+        }
 
         await fetchPerfil(data.user);
       }
@@ -233,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!configured) return;
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
+    loadedUserIdRef.current = null;
     setSession(null);
     setUser(null);
     setProfile(null);

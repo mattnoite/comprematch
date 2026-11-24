@@ -11,7 +11,7 @@ export interface NearbyBranchResult {
   lat: number;
   lng: number;
   distancia_metros: number;
-  fonte: "google_places" | "overpass" | "nominatim" | "supabase";
+  fonte: "google_places" | "overpass" | "photon" | "nominatim" | "supabase";
 }
 
 interface RequestBody {
@@ -26,7 +26,7 @@ interface NormalizedChainRequest {
   chainKey: string;
   nome_rede: string;
   aliases: string[];
-  primaryQuery: string;
+  searchQueries: string[];
 }
 
 interface CandidatePlace {
@@ -36,7 +36,7 @@ interface CandidatePlace {
   endereco: string;
   lat: number;
   lng: number;
-  fonte: "google_places" | "overpass" | "nominatim" | "supabase";
+  fonte: "google_places" | "overpass" | "photon" | "nominatim" | "supabase";
 }
 
 const KNOWN_CHAIN_ALIASES: Record<string, string[]> = {
@@ -45,7 +45,12 @@ const KNOWN_CHAIN_ALIASES: Record<string, string[]> = {
   "carrefour bairro": ["carrefour bairro", "carrefour market", "carrefour"],
   "carrefour hipermercado": ["carrefour hipermercado", "carrefour"],
   "carrefour express": ["carrefour express", "carrefour"],
-  carrefour: ["carrefour", "carrefour bairro", "carrefour market", "carrefour express"],
+  carrefour: [
+    "carrefour",
+    "carrefour bairro",
+    "carrefour market",
+    "carrefour express",
+  ],
   "pao de acucar": ["pao de acucar", "minuto pao de acucar"],
   "minuto pao de acucar": ["minuto pao de acucar", "pao de acucar"],
   "extra mercado": ["extra mercado", "mercado extra", "extra"],
@@ -58,18 +63,34 @@ const KNOWN_CHAIN_ALIASES: Record<string, string[]> = {
   sonda: ["sonda supermercados", "sonda"],
   hirota: ["hirota", "hirota food", "supermercado hirota"],
   "hirota food": ["hirota food", "hirota", "supermercado hirota"],
-  "dia": ["dia", "supermercado dia", "dia%"],
-  "supermercado dia": ["supermercado dia", "dia"],
+  dia: ["supermercado dia", "dia%", "dia"],
+  "supermercado dia": ["supermercado dia", "dia%", "dia"],
   "st marche": ["st marche", "santa marche"],
   "sams club": ["sam's club", "sams club"],
   "sam's club": ["sam's club", "sams club"],
   mambo: ["mambo", "supermercados mambo"],
-  "lopes supermercados": ["lopes supermercados", "supermercados lopes", "lopes"],
+  "lopes supermercados": [
+    "lopes supermercados",
+    "supermercados lopes",
+    "lopes",
+  ],
   nagumo: ["nagumo", "supermercados nagumo"],
   "barbosa supermercados": ["barbosa supermercados", "barbosa"],
   swift: ["swift", "mercado swift"],
   oxxo: ["oxxo"],
   "akki atacadista": ["akki atacadista", "akki"],
+};
+
+const SEARCH_QUERY_OVERRIDES: Record<string, string[]> = {
+  dia: ["Supermercado Dia", "Dia%"],
+  extra: ["Mercado Extra", "Extra Mercado"],
+  sonda: ["Sonda Supermercados"],
+  hirota: ["Hirota Supermercado", "Hirota Food"],
+  swift: ["Swift Mercado"],
+  tenda: ["Tenda Atacado"],
+  roldao: ["Roldão Atacadista"],
+  lopes: ["Supermercados Lopes"],
+  nagumo: ["Supermercados Nagumo"],
 };
 
 const GENERIC_CHAIN_WORDS = new Set([
@@ -95,6 +116,51 @@ const OVERPASS_ENDPOINTS = [
 ] as const;
 
 const OVERPASS_RADII_METERS = [5000, 12000, 25000] as const;
+const MAX_ACCEPTED_DISTANCE_METERS = 45_000;
+const CACHE_TTL_MS = 15 * 60 * 1000;
+
+const branchCache = new Map<
+  string,
+  { value: NearbyBranchResult; expiresAt: number }
+>();
+
+function makeCacheKey(origin: { lat: number; lng: number }, chainKey: string) {
+  // Grade ~1,1 km para reaproveitar buscas próximas sem estourar limites externos
+  return `${origin.lat.toFixed(2)},${origin.lng.toFixed(2)}::${chainKey}`;
+}
+
+function getCachedBranch(
+  origin: { lat: number; lng: number },
+  chainKey: string
+): NearbyBranchResult | null {
+  const key = makeCacheKey(origin, chainKey);
+  const entry = branchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    branchCache.delete(key);
+    return null;
+  }
+  // Recalcula distância exata para a origem atual
+  const exactDistance = Math.round(
+    haversineMeters(origin.lat, origin.lng, entry.value.lat, entry.value.lng)
+  );
+  return { ...entry.value, distancia_metros: exactDistance };
+}
+
+function setCachedBranch(
+  origin: { lat: number; lng: number },
+  chainKey: string,
+  value: NearbyBranchResult
+): void {
+  if (branchCache.size >= 400) {
+    const oldest = branchCache.keys().next().value;
+    if (oldest) branchCache.delete(oldest);
+  }
+  branchCache.set(makeCacheKey(origin, chainKey), {
+    value,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -133,14 +199,18 @@ function buildChainRequest(nomeRede: string): NormalizedChainRequest {
   }
 
   const aliases = Array.from(aliasSet).filter((a) => a.length >= 2);
-  // Mais específicos primeiro
   aliases.sort((a, b) => b.length - a.length);
+
+  const overrideQueries = SEARCH_QUERY_OVERRIDES[key];
+  const searchQueries = overrideQueries
+    ? [...overrideQueries, clean]
+    : [clean];
 
   return {
     chainKey: key,
     nome_rede: clean,
     aliases,
-    primaryQuery: clean,
+    searchQueries: Array.from(new Set(searchQueries)),
   };
 }
 
@@ -157,7 +227,9 @@ function candidateMatchScore(
 
   for (let i = 0; i < target.aliases.length; i++) {
     const alias = target.aliases[i];
-    const boundaryRegex = new RegExp(`(^|\\s|-)${escapeRegex(alias)}(\\s|-|$)`);
+    const boundaryRegex = new RegExp(
+      `(^|\\s|-|/)${escapeRegex(alias)}(\\s|-|%|$)`
+    );
 
     for (const field of fields) {
       if (field === alias) {
@@ -213,7 +285,7 @@ async function searchGooglePlaces(
             "places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location",
         },
         body: JSON.stringify({
-          textQuery: target.primaryQuery,
+          textQuery: target.searchQueries[0],
           languageCode: "pt-BR",
           regionCode: "BR",
           rankPreference: "DISTANCE",
@@ -226,7 +298,7 @@ async function searchGooglePlaces(
           },
         }),
       },
-      5500
+      5000
     );
 
     if (!response.ok) return [];
@@ -256,7 +328,9 @@ async function searchGooglePlaces(
         .filter(Boolean);
       const unidade =
         addrParts[1] ||
-        name.replace(new RegExp(escapeRegex(target.nome_rede), "i"), "").trim() ||
+        name
+          .replace(new RegExp(escapeRegex(target.nome_rede), "i"), "")
+          .trim() ||
         "Unidade próxima";
 
       return [
@@ -294,7 +368,6 @@ async function searchOverpassRadius(
   targets: NormalizedChainRequest[],
   radiusMeters: number
 ): Promise<OverpassSearchResult> {
-  // Usa tokens mais curtos/nucleares de cada rede para manter o payload do Overpass enxuto
   const regexTerms = Array.from(
     new Set(
       targets.flatMap((t) =>
@@ -328,7 +401,7 @@ out center tags;`;
           },
           body: `data=${encodeURIComponent(query)}`,
         },
-        3500
+        3000
       );
 
       if (!response.ok) continue;
@@ -389,6 +462,129 @@ out center tags;`;
   return { candidates: [], reachable: false };
 }
 
+interface PhotonFeature {
+  geometry?: { coordinates?: [number, number] };
+  properties?: {
+    osm_key?: string;
+    osm_value?: string;
+    name?: string;
+    street?: string;
+    housenumber?: string;
+    district?: string;
+    locality?: string;
+    city?: string;
+    state?: string;
+    countrycode?: string;
+  };
+}
+
+const VALID_STORE_OSM_VALUES = new Set([
+  "supermarket",
+  "wholesale",
+  "convenience",
+  "department_store",
+  "general",
+  "mall",
+  "greengrocer",
+  "butcher",
+  "marketplace",
+]);
+
+async function searchPhoton(
+  origin: { lat: number; lng: number },
+  target: NormalizedChainRequest
+): Promise<CandidatePlace[]> {
+  const results: CandidatePlace[] = [];
+
+  for (const queryText of target.searchQueries.slice(0, 2)) {
+    const url = new URL("https://photon.komoot.io/api/");
+    url.searchParams.set("q", queryText);
+    url.searchParams.set("lat", String(origin.lat));
+    url.searchParams.set("lon", String(origin.lng));
+    url.searchParams.set("limit", "15");
+    url.searchParams.set("osm_tag", "shop");
+
+    try {
+      const response = await fetchWithTimeout(
+        url.toString(),
+        {
+          headers: {
+            "User-Agent": "CompreMatch/1.0 (https://comprematch.local)",
+          },
+        },
+        4500
+      );
+
+      if (!response.ok) continue;
+      const data = (await response.json()) as { features?: PhotonFeature[] };
+      const features = Array.isArray(data.features) ? data.features : [];
+
+      for (const feature of features) {
+        const coords = feature.geometry?.coordinates;
+        if (!coords || coords.length < 2) continue;
+        const [lng, lat] = coords;
+        if (
+          typeof lat !== "number" ||
+          !Number.isFinite(lat) ||
+          typeof lng !== "number" ||
+          !Number.isFinite(lng)
+        ) {
+          continue;
+        }
+
+        const props = feature.properties ?? {};
+        if (
+          props.countrycode &&
+          props.countrycode.toUpperCase() !== "BR"
+        ) {
+          continue;
+        }
+        if (
+          props.osm_value &&
+          !VALID_STORE_OSM_VALUES.has(props.osm_value.toLowerCase())
+        ) {
+          continue;
+        }
+
+        const dist = haversineMeters(origin.lat, origin.lng, lat, lng);
+        if (dist > MAX_ACCEPTED_DISTANCE_METERS) continue;
+
+        const name = (props.name ?? "").trim();
+        if (!name) continue;
+
+        const streetLine =
+          props.street && props.housenumber
+            ? `${props.street}, ${props.housenumber}`
+            : props.street;
+        const suburb = props.district || props.locality || "";
+        const city = props.city || "";
+        const endereco = [streetLine, suburb, city]
+          .filter(Boolean)
+          .join(" - ");
+        const unidade = suburb || props.street || city || "Unidade próxima";
+
+        results.push({
+          name,
+          brand: name,
+          unidade,
+          endereco,
+          lat,
+          lng,
+          fonte: "photon",
+        });
+      }
+
+      if (results.some((c) => candidateMatchScore(c, target) > 0)) {
+        return results;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
 interface NominatimItem {
   lat?: string;
   lon?: string;
@@ -407,16 +603,27 @@ interface NominatimItem {
 }
 
 const NOMINATIM_BOX_DELTAS = [
-  { latDelta: 0.06, lngDelta: 0.07, limit: "20" }, // ~6-7 km
-  { latDelta: 0.14, lngDelta: 0.16, limit: "25" }, // ~15 km
-  { latDelta: 0.3, lngDelta: 0.34, limit: "30" }, // ~33 km (Grande SP)
+  { latDelta: 0.09, lngDelta: 0.1, limit: "20" }, // ~10 km
+  { latDelta: 0.28, lngDelta: 0.32, limit: "25" }, // ~30 km (Grande SP)
 ] as const;
+
+let lastNominatimCallAt = 0;
+
+async function throttleNominatim(): Promise<void> {
+  const elapsed = Date.now() - lastNominatimCallAt;
+  if (elapsed < 1050) {
+    await new Promise((resolve) => setTimeout(resolve, 1050 - elapsed));
+  }
+  lastNominatimCallAt = Date.now();
+}
 
 async function searchNominatimFallback(
   origin: { lat: number; lng: number },
   target: NormalizedChainRequest
 ): Promise<CandidatePlace[]> {
   for (const box of NOMINATIM_BOX_DELTAS) {
+    await throttleNominatim();
+
     const viewbox = [
       (origin.lng - box.lngDelta).toFixed(5),
       (origin.lat + box.latDelta).toFixed(5),
@@ -431,7 +638,7 @@ async function searchNominatimFallback(
     url.searchParams.set("countrycodes", "br");
     url.searchParams.set("viewbox", viewbox);
     url.searchParams.set("bounded", "1");
-    url.searchParams.set("q", target.primaryQuery);
+    url.searchParams.set("q", target.searchQueries[0]);
 
     try {
       const response = await fetchWithTimeout(
@@ -453,6 +660,9 @@ async function searchNominatimFallback(
         const lat = Number.parseFloat(item.lat ?? "");
         const lng = Number.parseFloat(item.lon ?? "");
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+
+        const dist = haversineMeters(origin.lat, origin.lng, lat, lng);
+        if (dist > MAX_ACCEPTED_DISTANCE_METERS) return [];
 
         const addr = item.address ?? {};
         const streetLine =
@@ -579,10 +789,19 @@ function pickClosestMatchingCandidate(
 }
 
 export async function POST(request: NextRequest) {
+  let body: RequestBody;
   try {
-    const body = (await request.json()) as RequestBody;
-    const lat = Number(body.origin?.lat);
-    const lng = Number(body.origin?.lng);
+    body = (await request.json()) as RequestBody;
+  } catch {
+    return NextResponse.json(
+      { error: "Corpo da requisição JSON inválido." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const lat = Number(body?.origin?.lat);
+    const lng = Number(body?.origin?.lng);
 
     if (
       !Number.isFinite(lat) ||
@@ -598,7 +817,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!Array.isArray(body.redes) || body.redes.length === 0) {
+    if (!Array.isArray(body?.redes) || body.redes.length === 0) {
       return NextResponse.json(
         { error: "Informe ao menos uma rede de supermercado." },
         { status: 400 }
@@ -629,11 +848,18 @@ export async function POST(request: NextRequest) {
 
     const resolvedByKey = new Map<string, NearbyBranchResult>();
 
+    // 0. Cache em memória por região/rede
+    for (const target of targets) {
+      const cached = getCachedBranch(origin, target.chainKey);
+      if (cached) resolvedByKey.set(target.chainKey, cached);
+    }
+
     // 1. Fonte primária opcional: Google Places API (caso configurada)
     const googleApiKey = process.env.GOOGLE_PLACES_API_KEY?.trim();
-    if (googleApiKey) {
+    const pendingGoogle = targets.filter((t) => !resolvedByKey.has(t.chainKey));
+    if (googleApiKey && pendingGoogle.length > 0) {
       const googleResults = await Promise.all(
-        targets.map(async (target) => {
+        pendingGoogle.map(async (target) => {
           const candidates = await searchGooglePlaces(
             origin,
             target,
@@ -646,11 +872,34 @@ export async function POST(request: NextRequest) {
         })
       );
       for (const { target, match } of googleResults) {
-        if (match) resolvedByKey.set(target.chainKey, match);
+        if (match) {
+          resolvedByKey.set(target.chainKey, match);
+          setCachedBranch(origin, target.chainKey, match);
+        }
       }
     }
 
-    // 2. Fonte pública principal: OpenStreetMap Overpass API com raio progressivo (5 km -> 12 km -> 25 km)
+    // 2. Fonte pública rápida: Photon (OpenStreetMap) com viés de proximidade em paralelo
+    const pendingPhoton = targets.filter((t) => !resolvedByKey.has(t.chainKey));
+    if (pendingPhoton.length > 0) {
+      const photonResults = await Promise.all(
+        pendingPhoton.map(async (target) => {
+          const candidates = await searchPhoton(origin, target);
+          return {
+            target,
+            match: pickClosestMatchingCandidate(origin, target, candidates),
+          };
+        })
+      );
+      for (const { target, match } of photonResults) {
+        if (match) {
+          resolvedByKey.set(target.chainKey, match);
+          setCachedBranch(origin, target.chainKey, match);
+        }
+      }
+    }
+
+    // 3. OpenStreetMap Overpass API com raio progressivo (5 km -> 12 km -> 25 km)
     for (const radiusMeters of OVERPASS_RADII_METERS) {
       const pending = targets.filter((t) => !resolvedByKey.has(t.chainKey));
       if (pending.length === 0) break;
@@ -668,11 +917,12 @@ export async function POST(request: NextRequest) {
         );
         if (match) {
           resolvedByKey.set(target.chainKey, match);
+          setCachedBranch(origin, target.chainKey, match);
         }
       }
     }
 
-    // 3. Fallback geográfico: Nominatim na área ao redor da origem
+    // 4. Fallback geográfico controlado: Nominatim (com espaçamento anti rate-limit)
     const pendingForNominatim = targets.filter(
       (t) => !resolvedByKey.has(t.chainKey)
     );
@@ -686,11 +936,12 @@ export async function POST(request: NextRequest) {
         );
         if (match) {
           resolvedByKey.set(target.chainKey, match);
+          setCachedBranch(origin, target.chainKey, match);
         }
       }
     }
 
-    // 4. Último fallback: tabela `mercados` no Supabase (apenas para redes sem retorno em tempo real)
+    // 5. Último fallback: tabela `mercados` no Supabase
     const pendingForSupabase = targets.filter(
       (t) => !resolvedByKey.has(t.chainKey)
     );
@@ -732,10 +983,7 @@ export async function POST(request: NextRequest) {
       .filter((t) => !resolvedByKey.has(t.chainKey))
       .map((t) => t.nome_rede);
 
-    return NextResponse.json(
-      { branches, unmatchedRedes },
-      { status: 200 }
-    );
+    return NextResponse.json({ branches, unmatchedRedes }, { status: 200 });
   } catch (err) {
     console.error("Erro na rota /api/mercados/proximos:", err);
     return NextResponse.json(

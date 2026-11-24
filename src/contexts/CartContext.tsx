@@ -23,6 +23,7 @@ export interface CartOfferInput {
   preco_oferta: number;
   categoria: string;
   is_clube: boolean;
+  data_fim?: string;
 }
 
 export interface CartMercadoInput {
@@ -43,6 +44,7 @@ interface CartContextValue {
   addItem: (oferta: CartOfferInput, mercado: CartMercadoInput) => void;
   removeItem: (ofertaId: string) => void;
   updateQuantity: (ofertaId: string, delta: number) => void;
+  pruneExpiredItems: (todayIso: string) => void;
   clearCart: () => void;
   getItemCount: () => number;
   getCartTotal: () => number;
@@ -72,6 +74,7 @@ function isValidCartItem(value: unknown): value is CartItem {
     typeof item.is_clube === "boolean" &&
     typeof item.nome_rede === "string" &&
     item.nome_rede.trim().length > 0 &&
+    validOptionalString(item.data_fim) &&
     validOptionalString(item.mercado_id) &&
     validOptionalString(item.unidade) &&
     validOptionalCoord(item.lat) &&
@@ -100,7 +103,8 @@ function getCartSnapshot(): CartItem[] {
       : EMPTY_CART;
     return cachedItems;
   } catch {
-    return EMPTY_CART;
+    // Fallback em memória caso localStorage esteja indisponível/bloqueado
+    return cachedItems;
   }
 }
 
@@ -110,14 +114,13 @@ function getServerCartSnapshot(): CartItem[] {
 
 function writeStoredCart(nextItems: CartItem[]) {
   if (typeof window === "undefined") return;
+  cachedItems = nextItems;
   try {
     const serialized = JSON.stringify(nextItems);
     cachedRawStorage = serialized;
-    cachedItems = nextItems;
     window.localStorage.setItem(CART_STORAGE_KEY, serialized);
   } catch {
-    // Fallback em memória caso localStorage esteja bloqueado
-    cachedItems = nextItems;
+    // Mantém estado apenas em memória quando localStorage está bloqueado
   }
   window.dispatchEvent(new Event(CART_EVENT_NAME));
 }
@@ -183,7 +186,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (existingIndex >= 0) {
         const next = current.map((item, idx) =>
           idx === existingIndex
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                data_fim: oferta.data_fim ?? item.data_fim,
+                quantity: item.quantity + 1,
+              }
             : item
         );
         writeStoredCart(next);
@@ -210,6 +217,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         preco_oferta: targetPrice,
         categoria: oferta.categoria,
         is_clube: targetClube,
+        ...(oferta.data_fim ? { data_fim: oferta.data_fim } : {}),
         nome_rede: mercado.nome_rede.trim(),
         ...(mercado.mercado_id ? { mercado_id: mercado.mercado_id } : {}),
         ...(mercado.unidade !== undefined ? { unidade: mercado.unidade } : {}),
@@ -243,6 +251,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return [{ ...item, quantity: nextQty }];
     });
     writeStoredCart(next);
+  }, []);
+
+  const pruneExpiredItems = useCallback((todayIso: string) => {
+    const current = getCartSnapshot();
+    const filtered = current.filter(
+      (item) => !item.data_fim || item.data_fim >= todayIso
+    );
+    if (filtered.length !== current.length) {
+      writeStoredCart(filtered);
+    }
   }, []);
 
   const clearCart = useCallback(() => {
@@ -279,6 +297,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addItem,
       removeItem,
       updateQuantity,
+      pruneExpiredItems,
       clearCart,
       getItemCount,
       getCartTotal,
@@ -290,6 +309,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addItem,
       removeItem,
       updateQuantity,
+      pruneExpiredItems,
       clearCart,
       getItemCount,
       getCartTotal,

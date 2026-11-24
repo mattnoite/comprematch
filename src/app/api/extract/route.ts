@@ -8,6 +8,11 @@ import {
 } from "@/types/database";
 import { resolveCategoryKey } from "@/lib/categoryAssets";
 import { groupMercadosByChain, normalizeChainKey } from "@/lib/chains";
+import {
+  getSaoPauloCurrentYear,
+  getSaoPauloOffsetIso,
+  getSaoPauloTodayIso,
+} from "@/lib/date";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -23,11 +28,11 @@ const GEMINI_MODEL_CANDIDATES: ReadonlyArray<{
   model: string;
   apiVersion: "v1" | "v1beta";
 }> = [
-  { model: "gemini-3.8-flash", apiVersion: "v1" },
-  { model: "gemini-3.8-flash", apiVersion: "v1beta" },
-  { model: "gemini-flash-latest", apiVersion: "v1beta" },
-  { model: "gemini-flash-lite-latest", apiVersion: "v1beta" },
-];
+    { model: "gemini-2.5-flash", apiVersion: "v1beta" },
+    { model: "gemini-2.0-flash", apiVersion: "v1beta" },
+    { model: "gemini-flash-latest", apiVersion: "v1beta" },
+    { model: "gemini-flash-lite-latest", apiVersion: "v1beta" },
+  ];
 
 async function generateWithGeminiFallback(
   genAI: GoogleGenerativeAI,
@@ -62,13 +67,11 @@ async function generateWithGeminiFallback(
 }
 
 function getTodayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return getSaoPauloTodayIso();
 }
 
 function getDefaultEndDate(): string {
-  const date = new Date();
-  date.setDate(date.getDate() + 5);
-  return date.toISOString().slice(0, 10);
+  return getSaoPauloOffsetIso(5);
 }
 
 function normalizePrice(value: unknown): number {
@@ -124,7 +127,7 @@ function normalizeDate(value: unknown, fallback: string): string {
     const day = brMatch[1].padStart(2, "0");
     const month = brMatch[2].padStart(2, "0");
     const rawYear = brMatch[3];
-    const currentYear = String(new Date().getFullYear());
+    const currentYear = String(getSaoPauloCurrentYear());
     const year = !rawYear
       ? currentYear
       : rawYear.length === 2
@@ -153,8 +156,8 @@ function sanitizeExtractedPayload(
       : "";
   const mercadoSugeridoId =
     rawMercadoId &&
-    rawMercadoId.toLowerCase() !== "null" &&
-    validMercadoIds.has(rawMercadoId)
+      rawMercadoId.toLowerCase() !== "null" &&
+      validMercadoIds.has(rawMercadoId)
       ? rawMercadoId
       : null;
 
@@ -208,15 +211,15 @@ function sanitizeExtractedPayload(
 
 type StaffAuthResult =
   | {
-      ok: true;
-      status: 200;
-      supabase: SupabaseClient;
-    }
+    ok: true;
+    status: 200;
+    supabase: SupabaseClient;
+  }
   | {
-      ok: false;
-      status: number;
-      error: string;
-    };
+    ok: false;
+    status: number;
+    error: string;
+  };
 
 async function authorizeStaffRequest(
   request: NextRequest
@@ -369,11 +372,11 @@ export async function POST(request: NextRequest) {
     const mercadosPromptList =
       uniqueChains.length > 0
         ? uniqueChains
-            .map(
-              (c) =>
-                `- id: "${c.representativeId}" | nome_rede: "${c.nome_rede}" (Abrangência: Grande São Paulo)`
-            )
-            .join("\n")
+          .map(
+            (c) =>
+              `- id: "${c.representativeId}" | nome_rede: "${c.nome_rede}" (Abrangência: Grande São Paulo)`
+          )
+          .join("\n")
         : "(Nenhuma rede cadastrada no momento)";
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -381,7 +384,7 @@ export async function POST(request: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const todayIso = getTodayIso();
-    const currentYear = new Date().getFullYear();
+    const currentYear = getSaoPauloCurrentYear();
     const defaultEndIso = getDefaultEndDate();
 
     const prompt = `Você é um especialista em OCR e estruturação de encartes de supermercados brasileiros para o aplicativo CompreMatch.
@@ -459,7 +462,35 @@ Schema JSON esperado:
       .replace(/```\s*$/i, "")
       .trim();
 
-    const parsedJson: unknown = JSON.parse(cleanedJson);
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(cleanedJson);
+    } catch {
+      const startIdx = cleanedJson.indexOf("{");
+      const endIdx = cleanedJson.lastIndexOf("}");
+      if (startIdx >= 0 && endIdx > startIdx) {
+        try {
+          parsedJson = JSON.parse(cleanedJson.slice(startIdx, endIdx + 1));
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "A IA retornou uma resposta incompleta ou fora do formato esperado. Tente enviar uma imagem mais nítida.",
+            },
+            { status: 502 }
+          );
+        }
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "A IA retornou uma resposta inválida para este encarte. Tente novamente.",
+          },
+          { status: 502 }
+        );
+      }
+    }
+
     const payload = sanitizeExtractedPayload(parsedJson, validMercadoIds);
 
     if (payload.mercado_sugerido_id) {

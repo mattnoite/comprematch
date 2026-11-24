@@ -89,16 +89,22 @@ function LoginFormContent() {
     setSubmitting(true);
     try {
       if (tab === "login") {
-        const { error } = await signIn(email, password);
+        const { error, profile: signedProfile } = await signIn(email, password);
         if (error) {
           setErrorMessage(formatAuthError(error));
           return;
         }
 
-        const safeDestination =
-          redirectTarget && redirectTarget.startsWith("/admin")
+        const isStaff =
+          signedProfile?.role === "admin" ||
+          signedProfile?.role === "colaborador";
+
+        const safeDestination = isStaff
+          ? redirectTarget && redirectTarget.startsWith("/admin")
             ? redirectTarget
-            : "/admin/upload";
+            : "/admin/upload"
+          : "/";
+
         router.push(safeDestination);
         router.refresh();
       } else {

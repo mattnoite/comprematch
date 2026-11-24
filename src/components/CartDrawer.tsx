@@ -2,11 +2,12 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Minus, Plus, ReceiptText, Trash2, X } from "lucide-react";
+import { AlertTriangle, Minus, Plus, ReceiptText, Trash2, X } from "lucide-react";
 import { useCart, type CartItem } from "@/hooks/useCart";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { getProductAsset } from "@/lib/categoryAssets";
 import { normalizeChainKey } from "@/lib/chains";
+import { getSaoPauloTodayIso } from "@/lib/date";
 
 interface CartDrawerProps {
   id: string;
@@ -39,11 +40,23 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
 
   const {
     items,
+    hydrated,
     updateQuantity,
     removeItem,
+    pruneExpiredItems,
     clearCart,
     getCartTotal,
   } = useCart();
+
+  const todayIso = hydrated ? getSaoPauloTodayIso() : "";
+  const expiredCount = useMemo(
+    () =>
+      todayIso
+        ? items.filter((it) => Boolean(it.data_fim && it.data_fim < todayIso))
+            .length
+        : 0,
+    [items, todayIso]
+  );
 
   const [fallbackNormalPrices, setFallbackNormalPrices] = useState<
     Record<string, number>
@@ -191,6 +204,33 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
 
         {/* Paradas */}
         <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-3">
+          {expiredCount > 0 && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-brand-dark"
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle
+                  className="h-4 w-4 shrink-0 text-amber-600"
+                  aria-hidden="true"
+                />
+                <span>
+                  {expiredCount}{" "}
+                  {expiredCount === 1
+                    ? "oferta na cesta expirou."
+                    : "ofertas na cesta expiraram."}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => pruneExpiredItems(todayIso)}
+                className="shrink-0 cursor-pointer font-bold text-brand-dark underline underline-offset-2 hover:text-brand-olive"
+              >
+                Remover
+              </button>
+            </div>
+          )}
+
           {groupedByMarket.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
               <ReceiptText className="h-7 w-7 text-brand-olive" aria-hidden="true" />
@@ -232,63 +272,75 @@ export function CartDrawer({ id, isOpen, onClose }: CartDrawerProps) {
                 </p>
 
                 <ul className="mt-2 space-y-2.5">
-                  {group.items.map((item) => (
-                    <li key={item.id} className="flex items-center gap-2.5">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F3F1EC] p-1.5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={getProductAsset(item.categoria)}
-                          alt=""
-                          className="h-full w-full object-contain"
-                        />
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 text-xs leading-snug font-medium text-brand-dark">
-                          {item.produto_nome}
-                          {item.peso_volume ? ` ${item.peso_volume}` : ""}
-                        </p>
-                        <p
-                          className={`text-xs font-bold text-brand-dark ${NUM}`}
-                        >
-                          {formatBRL(item.preco_oferta)}
-                        </p>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => updateQuantity(item.id, -1)}
-                          aria-label={`Diminuir quantidade de ${item.produto_nome}`}
-                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-[#333029]/20 text-brand-dark transition-colors hover:border-brand-gold"
-                        >
-                          <Minus className="h-3 w-3" aria-hidden="true" />
-                        </button>
-                        <span
-                          className={`min-w-5 text-center text-xs font-bold ${NUM}`}
-                          aria-label={`Quantidade: ${item.quantity}`}
-                        >
-                          {item.quantity}
+                  {group.items.map((item) => {
+                    const isExpired = Boolean(
+                      item.data_fim && item.data_fim < todayIso
+                    );
+                    return (
+                      <li key={item.id} className="flex items-center gap-2.5">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F3F1EC] p-1.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getProductAsset(item.categoria)}
+                            alt=""
+                            className="h-full w-full object-contain"
+                          />
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => updateQuantity(item.id, 1)}
-                          aria-label={`Aumentar quantidade de ${item.produto_nome}`}
-                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-brand-dark text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold"
-                        >
-                          <Plus className="h-3 w-3" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.id)}
-                          aria-label={`Remover ${item.produto_nome} da cesta`}
-                          className="ml-0.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-brand-taupe transition-colors hover:bg-red-50 hover:text-red-700"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-xs leading-snug font-medium text-brand-dark">
+                            {item.produto_nome}
+                            {item.peso_volume ? ` ${item.peso_volume}` : ""}
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p
+                              className={`text-xs font-bold text-brand-dark ${NUM}`}
+                            >
+                              {formatBRL(item.preco_oferta)}
+                            </p>
+                            {isExpired && (
+                              <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                Expirada
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, -1)}
+                            aria-label={`Diminuir quantidade de ${item.produto_nome}`}
+                            className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-[#333029]/20 text-brand-dark transition-colors hover:border-brand-gold"
+                          >
+                            <Minus className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                          <span
+                            className={`min-w-5 text-center text-xs font-bold ${NUM}`}
+                            aria-label={`Quantidade: ${item.quantity}`}
+                          >
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, 1)}
+                            aria-label={`Aumentar quantidade de ${item.produto_nome}`}
+                            className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-brand-dark text-brand-dark transition-colors hover:border-brand-gold hover:text-brand-gold"
+                          >
+                            <Plus className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            aria-label={`Remover ${item.produto_nome} da cesta`}
+                            className="ml-0.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-brand-taupe transition-colors hover:bg-red-50 hover:text-red-700"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
 
                 <p className="mt-3 text-right text-xs text-brand-dark">

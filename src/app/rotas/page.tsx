@@ -19,6 +19,7 @@ import type { RouteMapOrigin, RouteMapStop } from "@/components/RouteMap";
 import type { NearbyBranchResult } from "@/app/api/mercados/proximos/route";
 import { useCart, type CartItem } from "@/hooks/useCart";
 import { normalizeChainKey } from "@/lib/chains";
+import { getSaoPauloTodayIso } from "@/lib/date";
 import { haversineMeters } from "@/lib/geo";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Mercado } from "@/types/database";
@@ -228,7 +229,24 @@ function buildWazeUrl(stops: OrderedStop[]): string | null {
 }
 
 export default function RotasPage() {
-  const { items, hydrated, getCartTotal, getItemCount } = useCart();
+  const {
+    items,
+    hydrated,
+    getCartTotal,
+    getItemCount,
+    pruneExpiredItems,
+  } = useCart();
+
+  const todayIso = hydrated ? getSaoPauloTodayIso() : "";
+  const expiredCount = useMemo(
+    () =>
+      todayIso
+        ? items.filter((item) =>
+            Boolean(item.data_fim && item.data_fim < todayIso)
+          ).length
+        : 0,
+    [items, todayIso]
+  );
 
   const [origin, setOrigin] = useState<RouteMapOrigin | null>(null);
   const [addressQuery, setAddressQuery] = useState<string>("");
@@ -635,6 +653,7 @@ export default function RotasPage() {
     }
 
     const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     let active = true;
     const currentOrigin = origin;
     const currentStops = orderedStops;
@@ -678,16 +697,24 @@ export default function RotasPage() {
           legs: primaryRoute.legs ?? [],
         });
       } catch (err) {
-        if (!active || (err instanceof Error && err.name === "AbortError")) {
+        if (!active) return;
+        const isTimeout =
+          err instanceof Error &&
+          err.name === "AbortError" &&
+          controller.signal.aborted;
+        if (err instanceof Error && err.name === "AbortError" && !isTimeout) {
           return;
         }
         setRouteErrorState({
           key: currentKey,
-          message:
-            err instanceof Error
+          message: isTimeout
+            ? "O serviço de rotas (OSRM) demorou para responder. Os pinos e links de navegação continuam disponíveis."
+            : err instanceof Error
               ? `Não foi possível calcular a rota viária: ${err.message}`
               : "Erro ao consultar o serviço de rotas.",
         });
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
@@ -695,6 +722,7 @@ export default function RotasPage() {
 
     return () => {
       active = false;
+      clearTimeout(timeoutId);
       controller.abort();
     };
   }, [routeKey, origin, orderedStops]);
@@ -955,6 +983,32 @@ export default function RotasPage() {
                     <span>{originError}</span>
                   </div>
                 )}
+                {expiredCount > 0 && (
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-medium text-brand-dark"
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600"
+                        aria-hidden="true"
+                      />
+                      <span>
+                        {expiredCount}{" "}
+                        {expiredCount === 1
+                          ? "oferta da cesta está expirada."
+                          : "ofertas da cesta estão expiradas."}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => pruneExpiredItems(todayIso)}
+                      className="shrink-0 cursor-pointer font-bold underline underline-offset-2 hover:text-brand-olive"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                )}
                 {nearbyWarning && (
                   <div
                     role="alert"
@@ -1135,7 +1189,7 @@ export default function RotasPage() {
                     rel="noopener noreferrer"
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow py-3.5 text-sm font-bold text-brand-dark transition-all hover:bg-brand-gold active:scale-95"
                   >
-                    Navegar no Waze / Google Maps ↗
+                    Abrir rota completa no Google Maps ↗
                   </a>
                 )}
                 {wazeUrl && (
@@ -1145,7 +1199,8 @@ export default function RotasPage() {
                     rel="noopener noreferrer"
                     className="flex w-full items-center justify-center rounded-xl border border-[#333029]/15 bg-white py-2.5 text-xs font-semibold text-brand-dark transition-colors hover:border-brand-gold"
                   >
-                    Iniciar 1ª parada direto no Waze
+                    Navegar até a 1ª parada no Waze
+                    {orderedStops.length > 1 ? " (parada única)" : ""}
                   </a>
                 )}
               </div>

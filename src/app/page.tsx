@@ -17,28 +17,29 @@ import { ProductCard } from "@/components/ProductCard";
 import { Toast, type ToastMessage } from "@/components/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
-import { getProductAsset, resolveCategoryKey } from "@/lib/categoryAssets";
+import {
+  CATEGORY_MAP,
+  getProductAsset,
+  resolveCategoryKey,
+} from "@/lib/categoryAssets";
 import {
   groupMercadosByChain,
   normalizeChainKey,
   normalizeMatchText,
 } from "@/lib/chains";
+import { getSaoPauloTodayIso } from "@/lib/date";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import type { Mercado, Oferta } from "@/types/database";
+import { OFERTA_CATEGORIAS, type Mercado, type Oferta } from "@/types/database";
 
 const CATEGORY_FILTERS: ReadonlyArray<{
   label: string;
   key: string | null;
 }> = [
   { label: "Todas", key: null },
-  { label: "Bebidas", key: "bebidas" },
-  { label: "Mercearia", key: "mercearia" },
-  { label: "Hortifrúti", key: "hortifruti" },
-  { label: "Açougue", key: "acougue" },
-  { label: "Limpeza", key: "limpeza" },
-  { label: "Descartáveis", key: "descartaveis_embalagens" },
-  { label: "Higiene", key: "higiene_pessoal" },
-  { label: "Bazar", key: "bazar_utilidades" },
+  ...OFERTA_CATEGORIAS.map((key) => ({
+    label: CATEGORY_MAP[key]?.label ?? key,
+    key,
+  })),
 ];
 
 const MICRO_LABEL =
@@ -67,11 +68,7 @@ interface RawOfertaRow extends Oferta {
 }
 
 function getLocalTodayIso(): string {
-  const now = new Date();
-  const year = String(now.getFullYear());
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getSaoPauloTodayIso();
 }
 
 function normalizeSearchText(value: string): string {
@@ -354,8 +351,10 @@ export default function VitrinePublicaPage() {
         return false;
       }
       if (query) {
+        const categoryLabel =
+          CATEGORY_MAP[resolveCategoryKey(offer.categoria)]?.label ?? "";
         const haystack = normalizeSearchText(
-          `${offer.produto_nome} ${offer.marca ?? ""} ${offer.mercado.nome_rede}`
+          `${offer.produto_nome} ${offer.marca ?? ""} ${offer.peso_volume ?? ""} ${categoryLabel} ${offer.mercado.nome_rede}`
         );
         if (!haystack.includes(query)) return false;
       }
@@ -385,6 +384,7 @@ export default function VitrinePublicaPage() {
         preco_oferta: offer.preco_oferta,
         categoria: offer.categoria,
         is_clube: offer.is_clube,
+        data_fim: offer.data_fim,
       },
       {
         nome_rede: offer.mercado.nome_rede,
@@ -404,6 +404,72 @@ export default function VitrinePublicaPage() {
       .getElementById("ofertas")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  const heroSummary = useMemo(() => {
+    const formatCurrency = (val: number) =>
+      val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+    if (cartItems.length > 0) {
+      const uniqueNames = Array.from(
+        new Set(cartItems.map((item) => item.nome_rede.trim()).filter(Boolean))
+      );
+      const savings = cartItems.reduce((sum, item) => {
+        const normal = item.preco_normal ?? item.preco_oferta;
+        return sum + Math.max(0, normal - item.preco_oferta) * item.quantity;
+      }, 0);
+      const totalNormal = cartItems.reduce((sum, item) => {
+        const normal = Math.max(
+          item.preco_normal ?? item.preco_oferta,
+          item.preco_oferta
+        );
+        return sum + normal * item.quantity;
+      }, 0);
+      const ratio = totalNormal > 0 ? savings / totalNormal : 0;
+      const chainsText =
+        uniqueNames.length > 2
+          ? `${uniqueNames.slice(0, 2).join(" • ")} +${uniqueNames.length - 2}`
+          : uniqueNames.join(" • ") || "Sua cesta";
+
+      return {
+        chainsText,
+        tag: "Sua cesta",
+        valueText: formatCurrency(savings),
+        caption: "de economia estimada",
+        barWidthPct: Math.min(95, Math.max(18, Math.round(ratio * 240))),
+      };
+    }
+
+    if (ofertas.length > 0) {
+      const discounted = [...ofertas]
+        .map((offer) => ({
+          rede: offer.mercado.nome_rede,
+          diff: Math.max(0, offer.preco_normal - offer.preco_oferta),
+        }))
+        .filter((x) => x.diff > 0)
+        .sort((a, b) => b.diff - a.diff);
+
+      if (discounted.length > 0) {
+        const topSample = discounted.slice(0, 5);
+        const sampleSavings = topSample.reduce((sum, item) => sum + item.diff, 0);
+        const topChains = Array.from(new Set(topSample.map((i) => i.rede)));
+        return {
+          chainsText: topChains.slice(0, 2).join(" • "),
+          tag: "Hoje",
+          valueText: formatCurrency(sampleSavings),
+          caption: `em ${topSample.length} ${topSample.length === 1 ? "oferta" : "ofertas"}`,
+          barWidthPct: 72,
+        };
+      }
+    }
+
+    return {
+      chainsText: "Grande São Paulo",
+      tag: "Rota",
+      valueText: "Até 35%",
+      caption: "de economia",
+      barWidthPct: 68,
+    };
+  }, [cartItems, ofertas]);
 
   return (
     <div className="flex min-h-screen flex-col text-brand-dark">
@@ -625,17 +691,22 @@ export default function VitrinePublicaPage() {
             </div>
 
             <div className="absolute -bottom-5 left-4 w-[min(18rem,calc(100%-2rem))] rounded-2xl border border-[#333029]/10 bg-white p-4 sm:left-6">
-              <p className="text-xs font-medium text-brand-dark">
-                Assaí <span className="text-brand-taupe">•</span> Carrefour{" "}
-                <span className="float-right text-brand-taupe">Rota</span>
-              </p>
+              <div className="flex items-center justify-between gap-2 text-xs font-medium text-brand-dark">
+                <span className="truncate">{heroSummary.chainsText}</span>
+                <span className="shrink-0 text-brand-taupe">
+                  {heroSummary.tag}
+                </span>
+              </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#333029]/10">
-                <div className="h-full w-[72%] rounded-full bg-brand-gold" />
+                <div
+                  className="h-full rounded-full bg-brand-gold transition-all"
+                  style={{ width: `${heroSummary.barWidthPct}%` }}
+                />
               </div>
               <p className={`mt-2 text-lg font-black text-emerald-800 ${NUM}`}>
-                R$ 42,10{" "}
+                {heroSummary.valueText}{" "}
                 <span className="font-sans text-xs font-medium tracking-normal text-brand-dark">
-                  de economia
+                  {heroSummary.caption}
                 </span>
               </p>
             </div>

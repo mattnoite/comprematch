@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 
 export type ToastType = "success" | "error";
@@ -17,6 +18,13 @@ interface ToastProps {
 }
 
 export function Toast({ toast, onClose }: ToastProps) {
+  useEffect(() => {
+    if (!toast) return;
+    const durationMs = toast.type === "error" ? 6500 : 4500;
+    const timer = window.setTimeout(onClose, durationMs);
+    return () => window.clearTimeout(timer);
+  }, [toast, onClose]);
+
   if (!toast) return null;
 
   const isSuccess = toast.type === "success";
@@ -28,7 +36,7 @@ export function Toast({ toast, onClose }: ToastProps) {
       className="fixed right-5 bottom-5 z-50 w-full max-w-sm"
     >
       <div
-        className={`flex items-start gap-3 rounded-xl border p-4 ${
+        className={`flex items-start gap-3 rounded-xl border p-4 shadow-md ${
           isSuccess
             ? "border-brand-yellow bg-brand-dark text-white"
             : "border-red-500/40 bg-red-950 text-white"
