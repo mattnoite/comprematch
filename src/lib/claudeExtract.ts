@@ -148,7 +148,6 @@ export async function extractFlyerWithClaudeHaiku<T>(params: {
     body: JSON.stringify({
       model: CLAUDE_HAIKU_MODEL,
       max_tokens: MAX_OUTPUT_TOKENS,
-      temperature: 0.1,
       system:
         "Você é um extrator rigoroso de dados de encartes de supermercados brasileiros. Responda EXCLUSIVAMENTE com um objeto JSON válido seguindo exatamente o schema solicitado, sem texto introdutório, explicações ou blocos markdown.",
       messages: [
